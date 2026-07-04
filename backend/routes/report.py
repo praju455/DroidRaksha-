@@ -38,7 +38,7 @@ except Exception as _e:
 
 # ── Route ─────────────────────────────────────────────────────────────────────
 
-@router.get("/report/{identifier}")
+@router.get("/{identifier}")
 async def get_report(identifier: str):
     """Get a forensic PDF report by analysis ID or SHA-256 hash."""
     result = await database.get_analysis(identifier)
@@ -59,20 +59,20 @@ async def get_report(identifier: str):
 
     from backend.storage import s3
     
-    # Create BytesIO to upload to S3
-    buf = BytesIO(pdf_bytes)
+    # Try to upload to S3 (optional — skip if not configured)
+    try:
+        buf = BytesIO(pdf_bytes)
+        uploaded = await s3.upload_fileobj(buf, object_name)
+        
+        if uploaded:
+            presigned_url = await s3.get_presigned_url(object_name, expiration=900)
+            if presigned_url:
+                from fastapi.responses import RedirectResponse
+                return RedirectResponse(url=presigned_url, status_code=307)
+    except Exception:
+        pass  # S3 not configured or failed — serve PDF directly
     
-    # Try to upload to S3
-    uploaded = await s3.upload_fileobj(buf, object_name)
-    
-    if uploaded:
-        # If successfully uploaded, generate a 15-min presigned URL and redirect the browser
-        presigned_url = await s3.get_presigned_url(object_name, expiration=900)
-        if presigned_url:
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(url=presigned_url, status_code=307)
-    
-    # Fallback to streaming the bytes directly if S3 isn't configured or failed
+    # Fallback to streaming the bytes directly
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
