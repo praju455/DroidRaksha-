@@ -23,6 +23,7 @@ def calculate(
     virustotal: dict,
     abuseipdb: dict,
     india_ioc: dict,
+    c2_intelligence: dict | None = None,
 ) -> dict:
     """Calculate overall risk score and return breakdown."""
     breakdown = {
@@ -33,6 +34,7 @@ def calculate(
         "obfuscation": 0,
         "india_ioc": 0,
         "strings": 0,
+        "c2_confidence": 0,
     }
 
     # ── Permissions ──────────────────────────────────────────
@@ -49,12 +51,25 @@ def calculate(
     breakdown["yara"] = min(30, yara_score)
 
     # ── Certificate ───────────────────────────────────────────
-    cert_score = 0
-    if cert.get("is_self_signed"):
-        cert_score += 3
-    if cert.get("is_expired"):
-        cert_score += 2
-    breakdown["certificate"] = min(5, cert_score)
+    # Now using the richer cert_risk_score (0-100) from cert_analyzer.
+    # Weighted at max 20 points in the overall risk score (was 5).
+    raw_cert_score = cert.get("cert_risk_score", 0)
+    trust = cert.get("trust_verdict", "UNVERIFIED")
+
+    if trust == "VERIFIED":
+        # Publisher confirmed: cert contributes 0 to risk even if slightly self-signed
+        cert_score = 0
+    elif trust == "UNTRUSTED":
+        cert_score = 20  # max penalty
+    elif trust == "EXPIRED":
+        cert_score = 12
+    elif trust == "PARTIAL":
+        cert_score = int(raw_cert_score * 0.1)  # partial trust dampens penalty
+    else:
+        # UNVERIFIED / UNRECOGNIZED: scale 0-100 cert score down to 0-15
+        cert_score = int(min(15, raw_cert_score * 0.15))
+
+    breakdown["certificate"] = cert_score
 
     # ── Threat Intel ──────────────────────────────────────────
     ti_score = 0
@@ -88,8 +103,24 @@ def calculate(
     string_score += len(strings.get("suspicious_strings", [])) * 1
     breakdown["strings"] = min(10, string_score)
 
-    # ── Total ─────────────────────────────────────────────────
-    primary_score = breakdown["yara"] + breakdown["threat_intel"] + breakdown["india_ioc"]
+    # ── C2 Intelligence ───────────────────────────────────────
+    c2 = c2_intelligence or {}
+    c2_score = 0
+    if c2.get("c2_framework_detected"):
+        frameworks = c2.get("frameworks_detected", [])
+        critical_count = sum(1 for f in frameworks if f.get("severity") == "CRITICAL")
+        high_count     = sum(1 for f in frameworks if f.get("severity") == "HIGH")
+        c2_score += min(30, critical_count * 15 + high_count * 8)
+    confirmed_ips = c2.get("confirmed_c2_ips", [])
+    c2_score += min(20, len(confirmed_ips) * 5)
+    if c2.get("tor_detected"):
+        c2_score += 15
+    if c2.get("india_c2_domains"):
+        c2_score += min(15, len(c2["india_c2_domains"]) * 5)
+    breakdown["c2_confidence"] = min(40, c2_score)
+
+    # ── Total ─────────────────────────────────────────────────────
+    primary_score = breakdown["yara"] + breakdown["threat_intel"] + breakdown["india_ioc"] + breakdown["c2_confidence"]
     secondary_score = breakdown["permissions"] + breakdown["certificate"] + breakdown["obfuscation"] + breakdown["strings"]
     
     # Cap total score carefully: Max 80 from Primary, Max 20 from Secondary

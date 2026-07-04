@@ -21,26 +21,28 @@ async def get_stats():
 
     async with database.async_session_factory() as session:
         from sqlalchemy import select
-        rows = (await session.execute(select(database.AnalysisRecord))).scalars().all()
-        for r in rows:
-            try:
-                data = json.loads(r.result_json)
-                # ML family
-                ml = data.get("ml_classification") or {}
-                family = ml.get("family", "Unknown")
-                family_counts[family] = family_counts.get(family, 0) + 1
-                # India targeted
-                if ml.get("is_india_targeted"):
-                    india_targeted += 1
-            except Exception:
-                pass
-
+        
         # PCAP records
         try:
             pcap_rows = (await session.execute(select(database.PCAPRecord))).scalars().all()
             pcap_count = len(pcap_rows)
         except Exception:
             pass
+
+    # ── Query MongoDB for family breakdown and India targeting ──
+    try:
+        from backend.db.mongo import db
+        pipeline = [
+            {"$group": {"_id": "$ml_classification.family", "count": {"$sum": 1}}}
+        ]
+        async for doc in db.analyses.aggregate(pipeline):
+            family = doc.get("_id") or "Unknown"
+            family_counts[family] = doc.get("count", 0)
+            
+        india_targeted = await db.analyses.count_documents({"ml_classification.is_india_targeted": True})
+    except Exception as e:
+        from loguru import logger
+        logger.error(f"Failed to fetch stats from Mongo: {e}")
 
     base["family_breakdown"] = family_counts
     base["india_targeted"] = india_targeted

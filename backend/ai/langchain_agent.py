@@ -27,6 +27,10 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
 AGENT_TIMEOUT  = 90  # seconds
 
+# LM Studio — OpenAI-compatible local LLM server
+LM_STUDIO_URL   = os.getenv("LM_STUDIO_URL", "http://host.docker.internal:1234/v1")
+LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "local-model")
+
 
 # ── Tool implementations (pure Python, no I/O) ────────────────────────────────
 
@@ -160,16 +164,42 @@ RECOMMENDATIONS:
 VERDICT_CONFIDENCE: [0-100 number]"""
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        model  = genai.GenerativeModel("gemini-1.5-flash")
-        result = model.generate_content(prompt)
-        text   = result.text
-
+        # Try new google.genai SDK first
+        from google import genai as google_genai
+        client_g = google_genai.Client(api_key=GEMINI_API_KEY)
+        result = client_g.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
+        text = result.text
         return _parse_agent_response(text, "gemini_direct")
     except Exception as e:
-        logger.error(f"Gemini direct verdict failed: {e}")
-        return _template_verdict(all_data)
+        err = str(e)
+        if "429" in err or "quota" in err.lower():
+            logger.warning("Gemini quota hit in agent verdict, trying Groq...")
+        else:
+            logger.error(f"Gemini direct verdict failed: {e}")
+
+    # Groq fallback for agent verdict
+    if GROQ_API_KEY:
+        try:
+            from groq import Groq
+            client = Groq(api_key=GROQ_API_KEY)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You are a senior Android malware forensic analyst. Be precise and structured."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=2000,
+            )
+            text = response.choices[0].message.content
+            return _parse_agent_response(text, "groq_direct")
+        except Exception as e:
+            logger.error(f"Groq direct verdict also failed: {e}")
+
+    return _template_verdict(all_data)
 
 
 def _parse_agent_response(text: str, agent_name: str) -> dict:
@@ -270,8 +300,11 @@ def run_agent(
     anomaly_result: dict,
 ) -> dict:
     """
-    Run the LangChain ReAct agent or fall back to direct Gemini call.
-    Returns an AgentVerdict dict.
+    Run forensic agent verdict.
+    Priority: Groq (Llama 3 70B) → Gemini → template fallback.
+    The LangChain ReAct loop is intentionally bypassed — it is too slow and
+    quota-sensitive for real-time analysis. Instead we use a single well-structured
+    prompt that mimics the ReAct output format.
     """
     t0 = time.perf_counter()
 
@@ -288,143 +321,143 @@ def run_agent(
         "anomaly": anomaly_result,
     }
 
-    # ── Try LangChain ────────────────────────────────────────────────────────
-    if GEMINI_API_KEY:
-        try:
-            verdict = _run_langchain_agent(all_data, t0)
-            if verdict and verdict.get("court_narrative"):
-                verdict["inference_ms"] = int((time.perf_counter() - t0) * 1000)
-                return verdict
-        except Exception as e:
-            logger.warning(f"LangChain agent failed: {e} — falling back to direct Gemini call")
+    # ── Build rich context from all tools ────────────────────────────────────
+    perm_ctx    = _tool_check_permissions(manifest)
+    yara_ctx    = _tool_get_yara_findings(yara)
+    ml_ctx      = _tool_get_ml_verdict(xgboost_result, malbert_result, family_result)
+    risk_ctx    = _tool_get_risk_score(risk)
+    ioc_ctx     = _tool_get_india_ioc(india_ioc)
+    anomaly_ctx = _tool_check_anomaly(anomaly_result)
 
-    # ── Fallback: direct Gemini ───────────────────────────────────────────────
+    pkg        = manifest.get("package_name", "unknown")
+    risk_level = risk.get("risk_level", "UNKNOWN")
+    score      = risk.get("score", 0)
+    family     = family_result.get("family", "Unknown")
+
+    prompt = f"""You are DroidRaksha — a senior Android malware forensic analyst producing a court-admissible APK threat report.
+
+APK Package: {pkg}
+Overall Risk: {risk_level} ({score}/100)
+
+--- EVIDENCE FROM FORENSIC TOOLS ---
+
+[PERMISSIONS ANALYSIS]
+{perm_ctx}
+
+[YARA SIGNATURE MATCHES]
+{yara_ctx}
+
+[ML CLASSIFICATION ENSEMBLE]
+{ml_ctx}
+
+[RISK SCORE BREAKDOWN]
+{risk_ctx}
+
+[INDIA THREAT INTELLIGENCE]
+{ioc_ctx}
+
+[ZERO-DAY ANOMALY DETECTION]
+{anomaly_ctx}
+
+--- INSTRUCTIONS ---
+Using ALL the evidence above, write a structured forensic verdict.
+Be specific. Reference actual permissions, YARA rules, and ML results from the evidence.
+Format your response with EXACTLY these section headers:
+
+COURT_NARRATIVE:
+[Write 3 paragraphs: (1) threat identity and classification, (2) technical mechanisms with specific evidence from the tools above, (3) India-specific impact and targeted users]
+
+IOC_SUMMARY:
+[Write 2-3 sentences summarizing key indicators of compromise — specific permissions, IPs, domains, strings found]
+
+RECOMMENDATIONS:
+• [Specific recommendation 1]
+• [Specific recommendation 2]
+• [Specific recommendation 3]
+• [Specific recommendation 4]
+• [Specific recommendation 5]
+
+VERDICT_CONFIDENCE: [0-100 integer]"""
+
+    # ── 1. LM Studio first (local, no quota) ─────────────────────────────────
+    try:
+        from openai import OpenAI
+        lm_client = OpenAI(base_url=LM_STUDIO_URL, api_key="lm-studio")
+        response = lm_client.chat.completions.create(
+            model=LM_STUDIO_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are DroidRaksha, a senior Android malware forensic analyst. "
+                        "Produce structured, evidence-based forensic reports. "
+                        "Always use the exact section headers provided. Be precise and technical."
+                    ),
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.3,
+            max_tokens=2500,
+            timeout=30,
+        )
+        text = response.choices[0].message.content
+        verdict = _parse_agent_response(text, "lm_studio_local")
+        verdict["reasoning_steps"] = [
+            f"✓ Checked permissions: {json.loads(perm_ctx).get('total_dangerous', 0)} dangerous permissions found",
+            f"✓ YARA scan: {json.loads(yara_ctx).get('total_matches', 0)} rules matched",
+            f"✓ ML ensemble: family={family}, XGBoost={json.loads(ml_ctx).get('xgboost', {}).get('label', 'N/A')}",
+            f"✓ Risk score: {score}/100 ({risk_level})",
+            f"✓ India IOC: {len(json.loads(ioc_ctx).get('risk_flags', []))} flags",
+            f"✓ Anomaly: zero_day_risk={json.loads(anomaly_ctx).get('zero_day_risk', 'N/A')}",
+        ]
+        verdict["inference_ms"] = int((time.perf_counter() - t0) * 1000)
+        logger.info(f"Agent verdict via LM Studio in {verdict['inference_ms']}ms")
+        return verdict
+    except Exception as e:
+        err = str(e)
+        if "Connection refused" in err or "ConnectError" in err or "timeout" in err.lower():
+            logger.warning("LM Studio not reachable — trying Groq")
+        else:
+            logger.warning(f"LM Studio agent failed ({err[:80]}) — trying Groq")
+
+    # ── 2. Try Groq (Llama 3 70B) ────────────────────────────────────────────
+    if GROQ_API_KEY:
+        try:
+            from groq import Groq
+            client = Groq(api_key=GROQ_API_KEY)
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are DroidRaksha, a senior Android malware forensic analyst. "
+                            "You produce structured, evidence-based forensic reports. "
+                            "Always use the exact section headers provided. Be precise and technical."
+                        ),
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.3,
+                max_tokens=2500,
+            )
+            text = response.choices[0].message.content
+            verdict = _parse_agent_response(text, "groq_llama3")
+            verdict["reasoning_steps"] = [
+                f"✓ Checked permissions: {json.loads(perm_ctx).get('total_dangerous', 0)} dangerous permissions found",
+                f"✓ YARA scan: {json.loads(yara_ctx).get('total_matches', 0)} rules matched",
+                f"✓ ML ensemble: family={family}, XGBoost={json.loads(ml_ctx).get('xgboost', {}).get('label', 'N/A')}",
+                f"✓ Risk score: {score}/100 ({risk_level})",
+                f"✓ India IOC: {len(json.loads(ioc_ctx).get('risk_flags', []))} flags",
+                f"✓ Anomaly: zero_day_risk={json.loads(anomaly_ctx).get('zero_day_risk', 'N/A')}",
+            ]
+            verdict["inference_ms"] = int((time.perf_counter() - t0) * 1000)
+            logger.info(f"Agent verdict via Groq Llama-3 in {verdict['inference_ms']}ms")
+            return verdict
+        except Exception as e:
+            logger.warning(f"Groq agent failed: {e} — trying Gemini")
+
+    # ── 2. Fallback: Gemini (new SDK) ─────────────────────────────────────────
     verdict = _gemini_direct_verdict(all_data)
     verdict["inference_ms"] = int((time.perf_counter() - t0) * 1000)
     return verdict
-
-
-def _run_langchain_agent(all_data: dict, t0: float) -> dict | None:
-    """
-    Build and run the LangChain ReAct agent.
-    Returns parsed verdict or None if it fails.
-    """
-    try:
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        from langchain.agents import AgentExecutor, create_react_agent
-        from langchain.tools import tool
-        from langchain import hub
-    except ImportError:
-        logger.warning("LangChain not installed — skipping agent")
-        return None
-
-    manifest      = all_data["manifest"]
-    yara          = all_data["yara"]
-    risk          = all_data["risk"]
-    india_ioc     = all_data["india_ioc"]
-    xgboost_result = all_data["xgboost"]
-    malbert_result = all_data["malbert"]
-    family_result  = all_data["ml_classification"]
-    anomaly_result = all_data["anomaly"]
-
-    # Bind data into closures for tools
-    @tool
-    def check_permissions(_: str) -> str:
-        """Check dangerous Android permissions and dangerous combinations in the APK."""
-        return _tool_check_permissions(manifest)
-
-    @tool
-    def get_yara_findings(_: str) -> str:
-        """Get YARA malware signature matches with severity levels."""
-        return _tool_get_yara_findings(yara)
-
-    @tool
-    def get_ml_verdict(_: str) -> str:
-        """Get machine learning classification from XGBoost, MalBERT, and rule-based models with SHAP explanation."""
-        return _tool_get_ml_verdict(xgboost_result, malbert_result, family_result)
-
-    @tool
-    def get_risk_score(_: str) -> str:
-        """Get the overall risk score (0-100) and component breakdown."""
-        return _tool_get_risk_score(risk)
-
-    @tool
-    def get_india_ioc(_: str) -> str:
-        """Get India-specific threat intelligence: fake UPI apps, banking trojans, loan scams, matched IOCs."""
-        return _tool_get_india_ioc(india_ioc)
-
-    @tool
-    def check_anomaly(_: str) -> str:
-        """Check Isolation Forest anomaly score — detects zero-day threats not matching known signatures."""
-        return _tool_check_anomaly(anomaly_result)
-
-    tools = [check_permissions, get_yara_findings, get_ml_verdict,
-             get_risk_score, get_india_ioc, check_anomaly]
-
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=GEMINI_API_KEY,
-        temperature=0.3,
-    )
-
-    pkg = manifest.get("package_name", "unknown")
-
-    system_prompt = f"""You are DroidRaksha's autonomous forensic analyst agent.
-Analyse the Android APK `{pkg}` by using your tools in sequence.
-After gathering evidence, produce a COURT_NARRATIVE, IOC_SUMMARY, RECOMMENDATIONS, and VERDICT_CONFIDENCE.
-
-Format your Final Answer EXACTLY like this:
-COURT_NARRATIVE:
-[3 paragraphs]
-
-IOC_SUMMARY:
-[2 sentences]
-
-RECOMMENDATIONS:
-• [rec 1]
-• [rec 2]
-• [rec 3]
-• [rec 4]
-• [rec 5]
-
-VERDICT_CONFIDENCE: [0-100]"""
-
-    try:
-        prompt = hub.pull("hwchase17/react")
-    except Exception:
-        from langchain_core.prompts import PromptTemplate
-        prompt = PromptTemplate.from_template(
-            "You are a helpful assistant.\n\n{tools}\n\nTool names: {tool_names}\n\n"
-            "{agent_scratchpad}\n\nUser: {input}"
-        )
-
-    agent  = create_react_agent(llm, tools, prompt)
-    executor = AgentExecutor(
-        agent=agent,
-        tools=tools,
-        verbose=True,
-        max_iterations=8,
-        handle_parsing_errors=True,
-    )
-
-    remaining_time = AGENT_TIMEOUT - int(time.perf_counter() - t0) - 5
-    if remaining_time < 15:
-        return None
-
-    result = executor.invoke(
-        {"input": system_prompt},
-        config={"run_name": "DroidRakshaAgent"},
-    )
-
-    output = result.get("output", "")
-    if not output:
-        return None
-
-    parsed = _parse_agent_response(output, "langchain_react")
-    # Capture reasoning steps from intermediate_steps
-    steps = result.get("intermediate_steps", [])
-    parsed["reasoning_steps"] = [
-        f"Action: {step[0].tool} → {str(step[1])[:100]}"
-        for step in steps
-    ][:10]
-    return parsed
