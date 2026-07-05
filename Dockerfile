@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y \
     apktool \
     apksigner \
     tshark \
+    adb \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Set work directory ────────────────────────────────────────────────────────

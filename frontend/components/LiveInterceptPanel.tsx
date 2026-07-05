@@ -174,12 +174,12 @@ function CountdownTimer({ remaining, total }: { remaining: number; total: number
 }
 
 // ── Setup Guide ───────────────────────────────────────────────────────────
-// ... skipping to the correlation section ...
 
-
-function SetupGuide({ port }: { port: number }) {
+function SetupGuide({ port, analysisId }: { port: number; analysisId: string }) {
   const [open, setOpen] = useState(false);
   const [hostIp, setHostIp] = useState("10.0.2.2");
+  const [setupStatus, setSetupStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [setupError, setSetupError] = useState("");
 
   useEffect(() => {
     fetch(`${API_BASE}/intercept/status`)
@@ -187,6 +187,24 @@ function SetupGuide({ port }: { port: number }) {
       .then(d => { if (d.host_ip) setHostIp(d.host_ip); })
       .catch(() => {});
   }, []);
+
+  const handleAutoSetup = async () => {
+    setSetupStatus("loading");
+    setSetupError("");
+    try {
+      const res = await fetch(`${API_BASE}/intercept/${analysisId}/setup_device`, { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setSetupStatus("success");
+      } else {
+        setSetupStatus("error");
+        setSetupError(data.error || "Failed to setup device.");
+      }
+    } catch (e) {
+      setSetupStatus("error");
+      setSetupError("Failed to reach backend.");
+    }
+  };
 
   const cmds = [
     `adb shell settings put global http_proxy ${hostIp}:${port}`,
@@ -208,22 +226,56 @@ function SetupGuide({ port }: { port: number }) {
         {open ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
       </button>
       {open && (
-        <div className="px-4 pb-4 border-t border-border space-y-3">
-          <p className="text-[0.6rem] font-mono text-muted mt-3">
-            Run these once in your terminal with the emulator running (rooted Google APIs image):
-          </p>
-          <div className="space-y-2">
-            {cmds.map((cmd, i) => (
-              <div key={i} className="bg-[#050505] border border-[#1a1a1a] p-3 font-mono text-[0.6rem] text-[#00ed3f] relative group">
-                <span>{cmd}</span>
-              </div>
-            ))}
+        <div className="px-4 pb-4 border-t border-border space-y-4">
+          <div className="bg-[rgba(34,197,94,0.05)] border border-[rgba(34,197,94,0.2)] p-4 rounded mt-3 space-y-3">
+            <h3 className="text-[#22c55e] font-mono text-[0.65rem] uppercase font-bold tracking-widest">
+              Automated 1-Click Setup
+            </h3>
+            <p className="text-muted text-[0.65rem] font-mono leading-relaxed">
+              Ensure your Android emulator is running. Click below to automatically install the uploaded APK and configure the emulator's proxy settings via ADB.
+            </p>
+            <button
+              onClick={handleAutoSetup}
+              disabled={setupStatus === "loading" || setupStatus === "success"}
+              className={`px-4 py-2 text-[0.65rem] font-mono uppercase font-bold rounded flex items-center gap-2 transition-colors ${
+                setupStatus === "success" ? "bg-[#22c55e] text-[#111]" :
+                setupStatus === "error" ? "bg-[#f43f5e] text-white" :
+                "bg-[rgba(34,197,94,0.1)] text-[#22c55e] hover:bg-[rgba(34,197,94,0.2)]"
+              }`}
+            >
+              {setupStatus === "loading" && <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+              {setupStatus === "idle" && <Terminal className="w-3.5 h-3.5" />}
+              {setupStatus === "success" && "SUCCESSFULLY DEPLOYED"}
+              {setupStatus === "error" && "SETUP FAILED - RETRY"}
+              {setupStatus === "loading" && "DEPLOYING..."}
+              {setupStatus === "idle" && "INSTALL APK & CONFIGURE PROXY"}
+            </button>
+            {setupError && (
+              <p className="text-[#f43f5e] text-[0.6rem] font-mono whitespace-pre-wrap">{setupError}</p>
+            )}
+            <p className="text-[0.55rem] text-muted font-mono italic">
+              Note: This requires the Windows ADB server to accept connections from Docker (adb -a nodaemon server start). If it fails, use the manual commands below.
+            </p>
           </div>
-          <p className="text-[0.55rem] font-mono text-muted">
-            After setup, the mitmproxy CA certificate will be trusted system-wide.
-            HTTPS traffic will be automatically decrypted. The certificate is already
-            generated the first time you run mitmdump (session start creates it automatically).
-          </p>
+
+          <div className="space-y-3">
+            <h3 className="text-secondary font-mono text-[0.65rem] uppercase font-bold tracking-widest">
+              Manual Setup Fallback
+            </h3>
+            <p className="text-[0.6rem] font-mono text-muted">
+              Run these once in your terminal with the emulator running:
+            </p>
+            <div className="space-y-2">
+              {cmds.map((cmd, i) => (
+                <div key={i} className="bg-[#050505] border border-[#1a1a1a] p-3 font-mono text-[0.6rem] text-[#00ed3f] relative group">
+                  <span>{cmd}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[0.55rem] font-mono text-muted">
+              After setup, the mitmproxy CA certificate will be trusted system-wide.
+            </p>
+          </div>
         </div>
       )}
     </div>
