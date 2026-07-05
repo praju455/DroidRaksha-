@@ -130,7 +130,7 @@ async def analysis_progress_ws(websocket: WebSocket, job_id: str):
         except Exception:
             pass
     finally:
-        await redis.aclose()
+        await redis.close()
         try:
             await websocket.close()
         except Exception:

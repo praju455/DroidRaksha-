@@ -92,8 +92,17 @@ def _format_match(m) -> dict:
     evidence = None
     if getattr(m, "strings", None) and len(m.strings) > 0:
         first_match = m.strings[0]
-        offset = first_match[0]
-        str_data = first_match[2]
+        try:
+            if hasattr(first_match, "instances") and len(first_match.instances) > 0:
+                offset = first_match.instances[0].offset
+                str_data = first_match.instances[0].matched_data
+            else:
+                offset = first_match[0]
+                str_data = first_match[2]
+        except Exception:
+            offset = 0
+            str_data = str(first_match)
+            
         if isinstance(str_data, bytes):
             str_data = str_data.decode("utf-8", errors="replace")
         evidence = {
