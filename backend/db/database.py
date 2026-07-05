@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from typing import Optional, Union
 
-from backend.db.mongo import save_raw_result, get_raw_result, save_pcap_raw, get_pcap_raw
+from backend.db.mongo import save_raw_result, get_raw_result, save_pcap_raw, get_pcap_raw, save_live_intercept_result
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, Integer, Text, DateTime, select
@@ -48,7 +48,8 @@ class PCAPRecord(Base):
     # Plain Column avoids Mapped[Optional[str]] issues on Python 3.14 + SQLAlchemy 2.x
     analysis_id = mapped_column(String(36), nullable=True, index=True, default=None)
     pcap_risk: Mapped[str] = mapped_column(String(20), default="UNKNOWN")
-    # result_json is now stored in MongoDB
+    # Satisfy SQLite NOT NULL constraint from an older schema migration
+    result_json: Mapped[str] = mapped_column(String, default="{}")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
@@ -102,6 +103,32 @@ async def get_analysis(analysis_id: str) -> Optional[dict]:
             if mongo_doc:
                 # Remove MongoDB _id field
                 mongo_doc.pop('_id', None)
+
+                # Backfill c2_intelligence for analyses that predate the field
+                if "c2_intelligence" not in mongo_doc:
+                    try:
+                        from backend.intel import c2_detector
+                        strings = mongo_doc.get("strings", {})
+                        abuseipdb_result = mongo_doc.get("abuseipdb", {})
+                        all_urls = [
+                            item.get("value", "")
+                            for item in strings.get("urls", [])
+                            if item.get("value")
+                        ]
+                        sandbox_smali = None
+                        dynamic = mongo_doc.get("dynamic", {})
+                        if dynamic and dynamic.get("sandbox_available"):
+                            sandbox_smali = dynamic.get("smali_analysis")
+                        mongo_doc["c2_intelligence"] = c2_detector.analyze(
+                            strings=strings,
+                            sandbox_smali=sandbox_smali,
+                            abuseipdb_result=abuseipdb_result,
+                            urls=all_urls,
+                        )
+                    except Exception as e:
+                        logger.warning(f"C2 backfill failed for {analysis_id}: {e}")
+                        mongo_doc["c2_intelligence"] = None
+
                 return mongo_doc
         return None
 

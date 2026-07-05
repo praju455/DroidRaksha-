@@ -78,8 +78,8 @@ async def analysis_progress_ws(websocket: WebSocket, job_id: str):
         ping_task = asyncio.create_task(send_pings())
 
         try:
-            # Wait up to 10 minutes for the job to complete
-            deadline = asyncio.get_event_loop().time() + 600
+            # Wait up to 30 minutes for the job to complete (sandbox, mobsf, AI can take time)
+            deadline = asyncio.get_event_loop().time() + 1800
 
             import redis.exceptions
             while True:

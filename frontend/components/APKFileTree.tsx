@@ -453,7 +453,7 @@ export default function APKFileTree({ analysisId }: APKFileTreeProps) {
   const fetchTree = useCallback(async () => {
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/analysis/${analysisId}/filetree`
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/api/analysis/${analysisId}/filetree`
       );
       if (res.ok) setData(await res.json());
     } catch {

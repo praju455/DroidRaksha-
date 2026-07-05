@@ -50,6 +50,12 @@ export interface Strings {
   base64_strings: string[];
 }
 
+export interface CertPublisherMatch {
+  name: string;
+  package: string;
+  trust: string;
+}
+
 export interface Certificate {
   issuer: string;
   subject: string;
@@ -58,8 +64,16 @@ export interface Certificate {
   is_expired: boolean;
   is_self_signed: boolean;
   serial_number: string;
-  fingerprint_sha256: string;
+  signature_algorithm: string;
+  // fingerprint field — backend returns sha256_fingerprint, old records may have fingerprint_sha256
+  sha256_fingerprint?: string;
+  fingerprint_sha256?: string;
   warnings: string[];
+  // New publisher verification fields
+  publisher_match: CertPublisherMatch | null;
+  trust_verdict: "VERIFIED" | "PARTIAL" | "UNRECOGNIZED" | "UNTRUSTED" | "EXPIRED" | "UNVERIFIED";
+  cert_risk_score: number;
+  score_reasons: string[];
   error?: string;
 }
 
@@ -309,7 +323,7 @@ export interface NetworkData {
   http_hosts: Array<{ host: string; count: number }>;
   http_requests?: Array<{ host: string; method: string; uri: string }>;
   tls_sni: string[];
-  remote_ips: Array<{ ip: string; count: number; ports: number[]; first_seen: string }>;
+  remote_ips: Array<{ ip: string; count: number; ports: number[]; first_seen: string; static_files?: string[] }>;
   beaconing_alerts: BeaconAlert[];
   dga_suspects: DgaSuspect[];
   india_ioc_hits: Array<{ type: "ip" | "domain"; value: string; reason: string; severity: string }>;
@@ -377,6 +391,62 @@ export interface AnalysisResult {
   // Dynamic Sandbox
   dynamic?: DynamicSandbox;
   mobsf?: MobSFResult;
+}
+
+// ── Live Intercept types ──────────────────────────────────────────────────
+
+export interface InterceptFlow {
+  ts: number;
+  method: string;
+  host: string;
+  url: string;
+  dst_ip: string;
+  dst_port: number;
+  status: number;
+  tls: boolean;
+}
+
+export interface CorrelatedIP {
+  ip: string;
+  verdict: "CONFIRMED_C2" | "STATIC_ONLY" | "LIVE_ONLY";
+  risk: string;
+  label: string;
+  static_risk?: string;
+  live_calls?: number;
+  methods?: string[];
+  hosts?: string[];
+  urls?: string[];
+  tls?: boolean;
+  first_seen?: number;
+}
+
+export interface InterceptCorrelation {
+  risk: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  total_static_ips: number;
+  total_live_ips: number;
+  confirmed_c2: CorrelatedIP[];
+  static_only: CorrelatedIP[];
+  live_only: CorrelatedIP[];
+  live_hosts: Array<{
+    host: string; ip: string; tls: boolean;
+    method: string; status: number; confirmed: boolean;
+  }>;
+  match_count: number;
+  total_live_flows: number;
+  summary: string;
+}
+
+export interface InterceptResult {
+  analysis_id: string;
+  session_found: boolean;
+  running: boolean;
+  elapsed_sec: number;
+  remaining_sec: number;
+  duration_sec: number;
+  flow_count: number;
+  flows: InterceptFlow[];
+  static_ips: Array<{ type: string; value: string; risk: string }>;
+  correlation: InterceptCorrelation;
 }
 
 export interface DashboardStats {

@@ -254,7 +254,7 @@ def classify(
         }
 
     # Confidence = score normalised to 0–100 (cap at 95)
-    confidence = min(95, int((top.score / max(top.score, 60)) * 100))
+    confidence = min(95, max(40, int((top.score / 120) * 100)))
 
     secondary = [
         r.family for r in ranked[1:4]

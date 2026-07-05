@@ -49,8 +49,8 @@ def _run_async(coro):
     bind=True,
     name="backend.worker.tasks.run_analysis_task",
     max_retries=2,
-    soft_time_limit=600,
-    time_limit=720,
+    soft_time_limit=1800,
+    time_limit=1920,
 )
 def run_analysis_task(self, apk_path: str, filename: str, job_id: str) -> dict:
     """

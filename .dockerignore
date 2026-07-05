@@ -13,11 +13,28 @@ droidraksha.db
 droidraksha.db-journal
 uploads/
 test_uploads/
+*.apk
+*.pcap
+*.pcapng
+
+# Ignore duplicate/local workspaces and training datasets
+Cidecode/
+maldroid/
+scratch/
+
+# Keep runtime model artifacts in models/; the backend loads them at inference time.
+# Root-level duplicate training outputs can be ignored individually if needed.
 
 # Ignore frontend node modules
 frontend/node_modules/
 frontend/.next/
 frontend/.npm/
+frontend/tsconfig.tsbuildinfo
+
+# Ignore nested frontend build artifacts if duplicate workspaces are present
+**/node_modules/
+**/.next/
+**/tsconfig.tsbuildinfo
 
 # IDE/Editor files
 .vscode

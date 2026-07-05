@@ -26,7 +26,7 @@ const SUGGESTED_QUESTIONS = [
   "What should I do if I already installed this?",
 ];
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// Use relative path — Next.js rewrites /api/* → backend:8000 (works in Docker and local dev)
 
 export default function ThreatCopilot({ analysisId, activeTab, filename, riskLevel }: ThreatCopilotProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -74,7 +74,7 @@ export default function ThreatCopilot({ analysisId, activeTab, filename, riskLev
     ]);
 
     try {
-      const res = await fetch(`${API_BASE}/api/copilot/chat`, {
+      const res = await fetch(`/api/copilot/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

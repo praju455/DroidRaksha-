@@ -9,7 +9,7 @@ export interface UploadResponse {
   result?: AnalysisResult; // only present when status=="complete" (cache hit or sync fallback)
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

@@ -12,7 +12,7 @@ import RiskScoreCard from "@/components/RiskScoreCard";
 import AIExplanation from "@/components/AIExplanation";
 import PermissionTable from "@/components/PermissionTable";
 import StringsTable from "@/components/StringsTable";
-import CertificateCard from "@/components/CertificateCard";
+import CertificatePanel from "@/components/CertificateCard";
 import MitreTable from "@/components/MitreTable";
 import ExportButton from "@/components/ExportButton";
 import APKFileTree from "@/components/APKFileTree";
@@ -25,6 +25,8 @@ import CorrelationPanel from "@/components/CorrelationPanel";
 import DynamicAnalysisPanel from "@/components/DynamicAnalysisPanel";
 import DecompilerPanel from "@/components/DecompilerPanel";
 import ThreatCopilot from "@/components/ThreatCopilot";
+import C2IntelligencePanel from "@/components/C2IntelligencePanel";
+import LiveInterceptPanel from "@/components/LiveInterceptPanel";
 
 export default function ResultsPage() {
   const { id } = useParams() as { id: string };
@@ -32,7 +34,7 @@ export default function ResultsPage() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"overview" | "filetree" | "manifest" | "ml" | "network" | "sandbox" | "decompile">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "filetree" | "manifest" | "ml" | "network" | "sandbox" | "decompile" | "certificate" | "intercept">("overview");
 
   useEffect(() => {
     if (!id) return;
@@ -103,7 +105,7 @@ export default function ResultsPage() {
 
         {/* Tab Navigation */}
         <div className="flex gap-2 overflow-x-auto pb-2 border-b border-border">
-          {(["overview", "filetree", "manifest", "ml", "network", "sandbox", "decompile"] as const).map((tab) => (
+          {(["overview", "filetree", "manifest", "ml", "network", "intercept", "sandbox", "decompile", "certificate"] as const).map((tab) => (
             <button
               key={tab}
               id={`tab-${tab}`}
@@ -120,7 +122,24 @@ export default function ResultsPage() {
                 : tab === "ml" ? "[ INTELLIGENCE ]"
                 : tab === "network" ? "[ NETWORK ]"
                 : tab === "decompile" ? "[ DECOMPILE ]"
-                : (
+                : tab === "intercept" ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#f43f5e] animate-pulse" />
+                    [ INTERCEPT ]
+                  </span>
+                )
+                : tab === "certificate" ? (
+                  <span className="flex items-center gap-1.5">
+                    {result.certificate?.trust_verdict === "VERIFIED" ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    ) : result.certificate?.trust_verdict === "UNTRUSTED" ? (
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                    )}
+                    [ CERTIFICATE ]
+                  </span>
+                ) : (
                   <span className="flex items-center gap-1.5">
                     {(result.dynamic?.sandbox_available || result.mobsf?.available) && (
                       <span className="w-1.5 h-1.5 rounded-full bg-[#4ade80] animate-pulse" />
@@ -147,7 +166,37 @@ export default function ResultsPage() {
                 />
               )}
               <AIExplanation narrative={result.ai_narrative} recommendations={result.ai_recommendations} />
-              <CertificateCard cert={result.certificate} />
+              {/* Certificate moved to its own tab — show mini trust badge here */}
+              {result.certificate && (
+                <button
+                  onClick={() => setActiveTab("certificate")}
+                  className={`w-full text-left p-4 rounded-xl border transition-all hover:scale-[1.01] ${
+                    result.certificate.trust_verdict === "VERIFIED"
+                      ? "border-emerald-500/30 bg-emerald-500/5"
+                      : result.certificate.trust_verdict === "UNTRUSTED"
+                      ? "border-rose-500/30 bg-rose-500/5"
+                      : "border-yellow-500/30 bg-yellow-500/5"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-bold ${
+                        result.certificate.trust_verdict === "VERIFIED" ? "text-emerald-400" :
+                        result.certificate.trust_verdict === "UNTRUSTED" ? "text-rose-400" :
+                        "text-yellow-400"
+                      }`}>
+                        {result.certificate.trust_verdict === "VERIFIED" ? "✓ Verified Publisher" :
+                         result.certificate.trust_verdict === "UNTRUSTED" ? "✗ Untrusted Certificate" :
+                         "⚠ Unrecognized Certificate"}
+                      </span>
+                    </div>
+                    <span className="text-[0.6rem] font-mono text-slate-500">CERT RISK: {result.certificate.cert_risk_score ?? "—"}/100 → View Details</span>
+                  </div>
+                  {result.certificate.publisher_match && (
+                    <p className="text-xs text-slate-400 mt-1">{result.certificate.publisher_match.name}</p>
+                  )}
+                </button>
+              )}
             </div>
             <div className="lg:col-span-2 space-y-6">
               <div className="bg-surface-raised border border-border p-6 corner-brackets grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -274,6 +323,8 @@ export default function ResultsPage() {
         {/* 🔬 Network Traffic Tab */}
         {activeTab === "network" && (
           <div className="space-y-6">
+            {/* C2 Intelligence — shown first as the primary threat signal */}
+            <C2IntelligencePanel c2Intelligence={(result as any).c2_intelligence ?? null} />
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               <NetworkFlowDiagram network={result.network ?? null} />
               <BehaviourTimeline result={result} network={result.network ?? null} />
@@ -285,6 +336,20 @@ export default function ResultsPage() {
             />
           </div>
         )}
+
+        {/* 📡 Live Intercept Tab */}
+        <div className={activeTab === "intercept" ? "block" : "hidden"}>
+          <div className="space-y-4">
+            <p className="text-[0.65rem] font-mono text-muted uppercase tracking-widest border-l-2 border-[#f43f5e] pl-3">
+              Live mitmproxy interception — interact with the APK in the Android emulator for 60 seconds.
+              Captured IPs are cross-correlated with IPs hardcoded in the APK to confirm active C2 communication.
+            </p>
+            <LiveInterceptPanel
+              analysisId={result.id}
+              staticIps={result.strings?.ips as any ?? []}
+            />
+          </div>
+        </div>
 
         {/* 📦 Dynamic Sandbox Tab */}
         {activeTab === "sandbox" && (
@@ -306,6 +371,18 @@ export default function ResultsPage() {
         {activeTab === "decompile" && (
           <div className="space-y-4">
             <DecompilerPanel analysisId={result.id} />
+          </div>
+        )}
+
+        {/* 🔐 Certificate Analysis Tab */}
+        {activeTab === "certificate" && result.certificate && (
+          <div className="space-y-4">
+            <p className="text-[0.65rem] font-mono text-muted uppercase tracking-widest border-l-2 border-border pl-3">
+              APK signing certificate analysis — publisher verification, trust verdict, and certificate risk scoring.
+            </p>
+            <div className="max-w-2xl">
+              <CertificatePanel cert={result.certificate as any} />
+            </div>
           </div>
         )}
       </div>

@@ -177,14 +177,21 @@ async def upload_pcap(
 
     # Run PCAP analysis synchronously – fast enough for ≤200 MB
     from backend.engines import pcap_analyzer
+    # If linked to an APK scan, pass its India IOC data and static endpoints for cross-referencing
     india_ioc_data = None
+    static_endpoints = []
     linked_result = None
     if analysis_id:
         linked_result = await database.get_analysis(analysis_id)
         if linked_result:
             india_ioc_data = linked_result.get("india_ioc")
+            static_endpoints = linked_result.get("dynamic", {}).get("smali_analysis", {}).get("network_endpoints", [])
 
-    network = pcap_analyzer.analyze(pcap_path, india_ioc_data=india_ioc_data)
+    network = pcap_analyzer.analyze(
+        pcap_path, 
+        india_ioc_data=india_ioc_data, 
+        static_endpoints=static_endpoints
+    )
 
     # Patch the linked APK result with network data if requested
     if linked_result and network.get("available"):

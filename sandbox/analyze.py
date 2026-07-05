@@ -214,9 +214,14 @@ def walk_smali(decompiled_dir: Path) -> dict:
 
             # ── Network endpoints ────────────────────────────────────────────
             urls = re.findall(r'https?://[^\s"\'<>]{6,}', content)
+            # Find raw IPs (IPv4) that are not local
+            ips = re.findall(r'\b(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\b', content)
+            
             for url in urls[:10]:
-                if url not in findings["network_endpoints"]:
-                    findings["network_endpoints"].append(url)
+                findings["network_endpoints"].append({"url": url, "file": rel_path})
+            for ip in ips[:10]:
+                if ip not in ["127.0.0.1", "0.0.0.0", "255.255.255.255"] and not ip.startswith("10.") and not ip.startswith("192.168."):
+                    findings["network_endpoints"].append({"url": ip, "file": rel_path})
 
             # ── Dynamic class loading ────────────────────────────────────────
             if re.search(r"DexClassLoader|PathClassLoader|InMemoryDexClassLoader", content):
@@ -232,7 +237,17 @@ def walk_smali(decompiled_dir: Path) -> dict:
 
     # Deduplicate
     findings["native_libs"]        = list(set(findings["native_libs"]))
-    findings["network_endpoints"]  = list(set(findings["network_endpoints"]))[:50]
+    
+    # Deduplicate network endpoints (list of dicts)
+    seen_endpoints = set()
+    unique_endpoints = []
+    for ep in findings["network_endpoints"]:
+        key = f"{ep['url']}::{ep['file']}"
+        if key not in seen_endpoints:
+            seen_endpoints.add(key)
+            unique_endpoints.append(ep)
+    findings["network_endpoints"] = unique_endpoints[:50]
+    
     findings["dynamic_loading"]    = list(set(findings["dynamic_loading"]))
     findings["reflection_calls"]   = list(set(findings["reflection_calls"]))
 

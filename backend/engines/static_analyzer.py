@@ -15,7 +15,7 @@ from backend.engines import (
     yara_scanner,
     obfuscation,
 )
-from backend.intel import india_ioc, virustotal, abuseipdb, asn_lookup, otx
+from backend.intel import india_ioc, virustotal, abuseipdb, asn_lookup, otx, c2_detector
 from backend.scoring import risk_scorer
 from backend.ai import narrative as ai_narrative_module
 
@@ -83,8 +83,18 @@ async def run(apk_path: str, filename: str) -> dict:
     asn = await asn_lookup.analyze(ip_list)
     otx_result = await otx.analyze(ip_list, domains)
 
+    logger.info("Running C2 intelligence detection...")
+    # sandbox_smali populated after sandbox runs — pass None here, updated post-sandbox below
+    all_urls = [item.get("value", "") for item in strings.get("urls", [])]
+    c2_intel_pre = c2_detector.analyze(
+        strings=strings,
+        sandbox_smali=None,
+        abuseipdb_result=abuse,
+        urls=all_urls,
+    )
+
     logger.info("Calculating risk score...")
-    risk = risk_scorer.calculate(manifest, strings, cert, yara, obf, vt, abuse, ioc)
+    risk = risk_scorer.calculate(manifest, strings, cert, yara, obf, vt, abuse, ioc, c2_intel_pre)
 
     logger.info("Getting MITRE ATT&CK mapping...")
     mitre = ai_narrative_module.get_mitre_tactics(manifest, obf, yara)
@@ -129,6 +139,18 @@ async def run(apk_path: str, filename: str) -> dict:
         sandbox_result = sandbox_engine.run(apk_path)
     except Exception as e:
         sandbox_result = {"sandbox_available": False, "error": str(e)}
+
+    # Re-run C2 detection with smali findings now available
+    logger.info("Re-running C2 detection with sandbox smali data...")
+    sandbox_smali = sandbox_result.get("smali_analysis") if sandbox_result.get("sandbox_available") else None
+    c2_intel = c2_detector.analyze(
+        strings=strings,
+        sandbox_smali=sandbox_smali,
+        abuseipdb_result=abuse,
+        urls=all_urls,
+    )
+    # Re-score with enriched C2 data
+    risk = risk_scorer.calculate(manifest, strings, cert, yara, obf, vt, abuse, ioc, c2_intel)
 
     # ── MobSF Static API ───────────────────────────────────────────────────
     logger.info("Running MobSF static analysis...")
@@ -183,6 +205,7 @@ async def run(apk_path: str, filename: str) -> dict:
         "dynamic": sandbox_result,
         "mobsf": mobsf_result,
         "correlation": correlation,
+        "c2_intelligence": c2_intel,
     }
 
     logger.info(f"Analysis complete: {analysis_id} | Risk: {risk['risk_level']} ({risk['score']}/100)")

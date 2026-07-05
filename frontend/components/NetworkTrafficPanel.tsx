@@ -388,9 +388,20 @@ export default function NetworkTrafficPanel({ analysisId, initialNetwork }: Prop
             <tbody>
               {filteredIps.slice(0, 50).map((r, i) => (
                 <tr key={i} className="border-b border-border hover:bg-surface-raised">
-                  <td className="py-3 text-[#0ea5e9]">{r.ip}</td>
-                  <td className="py-3 text-right text-secondary">{r.count.toLocaleString()}</td>
-                  <td className="py-3 pl-6">
+                  <td className="py-3">
+                    <span className="text-[#0ea5e9] block">{r.ip}</span>
+                    {r.static_files && r.static_files.length > 0 && (
+                      <div className="mt-1 flex flex-col gap-1">
+                        {r.static_files.map((file: string, idx: number) => (
+                          <span key={idx} className="text-[0.55rem] text-[#22c55e] bg-[rgba(34,197,94,0.1)] border border-[rgba(34,197,94,0.3)] px-1 py-0.5 max-w-[200px] truncate block" title={file}>
+                            FOUND IN: {file.split('/').pop()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-3 text-right text-secondary align-top">{r.count.toLocaleString()}</td>
+                  <td className="py-3 pl-6 align-top">
                     <div className="flex flex-wrap gap-1.5">
                       {r.ports.slice(0, 6).map(p => (
                         <span key={p} className={`px-1.5 py-0.5 border uppercase tracking-widest ${

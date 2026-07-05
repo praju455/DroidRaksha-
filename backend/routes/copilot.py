@@ -5,8 +5,9 @@ Streaming chat endpoint that accepts a user question + analysis_id,
 fetches the full analysis context from the database, and streams
 an LLM-powered conversational explanation back to the frontend.
 
-Primary: Google Gemini 2.0 Flash
-Fallback: Groq (Llama 3 70B) — used when Gemini is unavailable or fails.
+Priority: LM Studio (local) → Gemini → Groq
+LM Studio runs an OpenAI-compatible API at localhost:1234.
+From inside Docker, host machine is reached via host.docker.internal.
 """
 from __future__ import annotations
 import os
@@ -19,8 +20,12 @@ from backend.db import database
 
 router = APIRouter()
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GEMINI_API_KEY  = os.getenv("GEMINI_API_KEY", "")
+GROQ_API_KEY    = os.getenv("GROQ_API_KEY", "")
+# LM Studio: OpenAI-compatible server on the host machine
+# From Docker, host.docker.internal resolves to the host's loopback
+LM_STUDIO_URL   = os.getenv("LM_STUDIO_URL", "http://host.docker.internal:1234/v1")
+LM_STUDIO_MODEL = os.getenv("LM_STUDIO_MODEL", "local-model")
 
 
 class CopilotRequest(BaseModel):
@@ -99,15 +104,10 @@ RULES:
 async def copilot_chat(req: CopilotRequest):
     """
     Streaming chat endpoint for the Threat Copilot.
-    Tries Gemini first, falls back to Groq if Gemini fails.
+    Priority: LM Studio (local) → Gemini → Groq
     """
-    if not GEMINI_API_KEY and not GROQ_API_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="No AI keys configured. Set GEMINI_API_KEY or GROQ_API_KEY in .env"
-        )
-
-    # Fetch analysis
+    # Allow if at least one provider is configured
+    # LM Studio is always available when running (no key needed)
     analysis = await database.get_analysis(req.analysis_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -119,40 +119,63 @@ async def copilot_chat(req: CopilotRequest):
     system_prompt = _build_system_prompt(data, req.context_tab)
 
     async def generate():
-        used_fallback = False
+        # ── 1. LM Studio (local model — fastest, no quota) ───────────────
+        try:
+            from openai import OpenAI
+            lm_client = OpenAI(base_url=LM_STUDIO_URL, api_key="lm-studio")
+            # Test connectivity with a short timeout
+            response = lm_client.chat.completions.create(
+                model=LM_STUDIO_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": req.question},
+                ],
+                temperature=0.4,
+                max_tokens=1500,
+                stream=True,
+                timeout=10,
+            )
+            for chunk in response:
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
+            return  # Success — LM Studio responded
 
-        # ── Try Gemini first ─────────────────────────────────────────────
+        except Exception as e:
+            err = str(e)
+            if "Connection refused" in err or "ConnectError" in err or "timeout" in err.lower():
+                logger.warning("LM Studio not reachable at %s — falling back to Gemini", LM_STUDIO_URL)
+            else:
+                logger.warning("LM Studio failed (%s) — falling back to Gemini", err[:120])
+
+        # ── 2. Gemini ────────────────────────────────────────────────────
+        gemini_failed = False
         if GEMINI_API_KEY:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=GEMINI_API_KEY)
-
-                model = genai.GenerativeModel(
-                    "gemini-2.0-flash",
-                    system_instruction=system_prompt,
+                from google import genai as google_genai
+                client_g = google_genai.Client(api_key=GEMINI_API_KEY)
+                full_prompt = system_prompt + "\n\nUser question: " + req.question
+                response = client_g.models.generate_content_stream(
+                    model="gemini-2.0-flash",
+                    contents=full_prompt,
                 )
-
-                response = model.generate_content(
-                    req.question,
-                    stream=True,
-                )
-
                 for chunk in response:
                     if chunk.text:
                         yield chunk.text
-
-                return  # Success — don't fall through to Groq
-
+                return
             except Exception as e:
-                logger.warning(f"Gemini Copilot failed, falling back to Groq: {e}")
-                used_fallback = True
+                err_str = str(e)
+                if "429" in err_str or "quota" in err_str.lower():
+                    logger.warning("Gemini quota exceeded, falling back to Groq")
+                else:
+                    logger.warning("Gemini failed (%s), falling back to Groq", err_str[:100])
+                gemini_failed = True
 
-        # ── Fallback: Groq (Llama 3 70B) ─────────────────────────────────
-        if (used_fallback or not GEMINI_API_KEY) and GROQ_API_KEY:
+        # ── 3. Groq (Llama 3 70B) ────────────────────────────────────────
+        if (gemini_failed or not GEMINI_API_KEY) and GROQ_API_KEY:
             try:
                 from groq import Groq
                 client = Groq(api_key=GROQ_API_KEY)
-
                 response = client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
                     messages=[
@@ -163,20 +186,17 @@ async def copilot_chat(req: CopilotRequest):
                     max_tokens=1500,
                     stream=True,
                 )
-
                 for chunk in response:
                     delta = chunk.choices[0].delta
                     if delta and delta.content:
                         yield delta.content
-
                 return
-
             except Exception as e:
-                logger.error(f"Groq Copilot also failed: {e}")
-                yield f"\n\n⚠️ Both AI services are unavailable. Error: {str(e)[:200]}"
+                logger.error("Groq Copilot also failed: %s", e)
+                yield f"\n\n⚠️ All AI services unavailable. Error: {str(e)[:200]}"
                 return
 
-        yield "\n\n⚠️ No AI service available. Please check your API keys in .env"
+        yield "\n\n⚠️ No AI service reachable. Start LM Studio or set GROQ_API_KEY in .env"
 
     return StreamingResponse(
         generate(),
@@ -194,9 +214,6 @@ async def copilot_quick_explain(req: CopilotRequest):
     Non-streaming endpoint for quick tooltip explanations.
     Tries Gemini first, falls back to Groq.
     """
-    if not GEMINI_API_KEY and not GROQ_API_KEY:
-        return {"explanation": "No AI keys configured. Set GEMINI_API_KEY or GROQ_API_KEY in .env"}
-
     analysis = await database.get_analysis(req.analysis_id)
     if not analysis:
         raise HTTPException(status_code=404, detail="Analysis not found")
@@ -204,46 +221,47 @@ async def copilot_quick_explain(req: CopilotRequest):
     data = analysis if isinstance(analysis, dict) else (
         analysis.__dict__ if hasattr(analysis, "__dict__") else {}
     )
+    sys_p = _build_system_prompt(data, req.context_tab) + "\n\nKEEP YOUR ANSWER TO 2-3 SENTENCES MAX."
 
-    system_prompt = _build_system_prompt(data, req.context_tab)
+    # ── 1. LM Studio ─────────────────────────────────────────────────
+    try:
+        from openai import OpenAI
+        lm = OpenAI(base_url=LM_STUDIO_URL, api_key="lm-studio")
+        resp = lm.chat.completions.create(
+            model=LM_STUDIO_MODEL,
+            messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": req.question}],
+            temperature=0.4, max_tokens=300, timeout=8,
+        )
+        return {"explanation": resp.choices[0].message.content}
+    except Exception:
+        pass
 
-    # ── Try Gemini first ─────────────────────────────────────────────
+    # ── 2. Gemini ─────────────────────────────────────────────────────
     if GEMINI_API_KEY:
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=GEMINI_API_KEY)
-
-            model = genai.GenerativeModel(
-                "gemini-2.0-flash",
-                system_instruction=system_prompt + "\n\nKEEP YOUR ANSWER TO 2-3 SENTENCES MAX.",
+            from google import genai as google_genai
+            client_g = google_genai.Client(api_key=GEMINI_API_KEY)
+            result = client_g.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=sys_p + "\n\nUser: " + req.question,
             )
-
-            result = model.generate_content(req.question)
             return {"explanation": result.text}
-
         except Exception as e:
-            logger.warning(f"Gemini quick-explain failed, trying Groq: {e}")
+            logger.warning("Gemini quick-explain failed: %s", e)
 
-    # ── Fallback: Groq ───────────────────────────────────────────────
+    # ── 3. Groq ───────────────────────────────────────────────────────
     if GROQ_API_KEY:
         try:
             from groq import Groq
             client = Groq(api_key=GROQ_API_KEY)
-
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt + "\n\nKEEP YOUR ANSWER TO 2-3 SENTENCES MAX."},
-                    {"role": "user", "content": req.question},
-                ],
-                temperature=0.4,
-                max_tokens=300,
+                messages=[{"role": "system", "content": sys_p}, {"role": "user", "content": req.question}],
+                temperature=0.4, max_tokens=300,
             )
-
             return {"explanation": response.choices[0].message.content}
-
         except Exception as e:
-            logger.error(f"Groq quick-explain also failed: {e}")
+            logger.error("Groq quick-explain failed: %s", e)
 
-    return {"explanation": "AI services are currently unavailable. Please try again later."}
+    return {"explanation": "No AI service reachable. Start LM Studio or configure API keys in .env"}
 

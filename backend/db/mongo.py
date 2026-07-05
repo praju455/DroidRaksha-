@@ -6,19 +6,19 @@ import os
 from loguru import logger
 from motor.motor_asyncio import AsyncIOMotorClient
 
-MONGO_URI = os.getenv("MONGO_URI", "")
-
 _client = None
 _db = None
 
 def get_mongo_db():
     global _client, _db
-    if not MONGO_URI:
+    # Read lazily so dotenv is guaranteed to have loaded first
+    mongo_uri = os.getenv("MONGO_URI", "")
+    if not mongo_uri:
         return None
         
     if _client is None:
         try:
-            _client = AsyncIOMotorClient(MONGO_URI)
+            _client = AsyncIOMotorClient(mongo_uri)
             _db = _client.get_database("droidraksha")
         except Exception as e:
             logger.error(f"Failed to connect to MongoDB: {e}")
@@ -72,3 +72,17 @@ async def get_pcap_raw(pcap_id: str) -> dict | None:
         
     collection = db["pcap_analyses"]
     return await collection.find_one({"_id": pcap_id})
+
+async def save_live_intercept_result(analysis_id: str, intercept_data: dict) -> None:
+    """Save live interception results to the existing raw analysis document."""
+    db = get_mongo_db()
+    if db is None:
+        return
+        
+    collection = db["raw_analyses"]
+    await collection.update_one(
+        {"_id": analysis_id},
+        {"$set": {"live_intercept": intercept_data}},
+        upsert=True
+    )
+    logger.info(f"Saved live intercept data to MongoDB for {analysis_id}")

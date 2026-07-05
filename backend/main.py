@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from loguru import logger
 
 from backend.db.database import init_db
-from backend.routes import upload, analysis, sandbox, stats, websocket, report, search, export, copilot
+from backend.routes import upload, analysis, sandbox, stats, websocket, report, search, export, copilot, intercept
 from backend.db.database import engine, Base
 from backend.db import elastic
 
@@ -63,6 +63,7 @@ app.include_router(search.router, prefix="/api/search", tags=["Global Search"])
 app.include_router(stats.router, prefix="/api", tags=["Dashboard"])
 app.include_router(websocket.router, prefix="/api", tags=["WebSocket"])
 app.include_router(sandbox.router, prefix="/api", tags=["Sandbox"])
+app.include_router(intercept.router, prefix="/api", tags=["Live Intercept"])
 app.include_router(copilot.router, prefix="/api", tags=["Threat Copilot"])
 
 

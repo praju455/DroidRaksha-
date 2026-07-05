@@ -144,13 +144,14 @@ def _is_dga(domain: str) -> bool:
 
 # ── Main analyzer ──────────────────────────────────────────────────────────────
 
-def analyze(pcap_path: str | Path, india_ioc_data: Optional[dict] = None) -> dict:
+def analyze(pcap_path: str | Path, india_ioc_data: Optional[dict] = None, static_endpoints: Optional[list] = None) -> dict:
     """
     Parse a PCAP file and return a structured network report.
 
     Args:
         pcap_path:      Path to the .pcap file.
         india_ioc_data: Optional pre-computed India IOC data to cross-reference.
+        static_endpoints: Optional list of {"url": string, "file": string} extracted from static analysis.
 
     Returns dict with keys:
         dns_queries, http_hosts, remote_ips, beaconing_alerts,
@@ -295,8 +296,19 @@ def analyze(pcap_path: str | Path, india_ioc_data: Optional[dict] = None) -> dic
     # ── Post-processing ───────────────────────────────────────────────────────
 
     # Convert ports sets to sorted lists for JSON serialisation
-    for ip_data in remote_ips.values():
+    # and perform static-to-dynamic correlation
+    for ip, ip_data in remote_ips.items():
         ip_data["ports"] = sorted(ip_data["ports"])
+        
+        # Correlate with static analysis endpoints if available
+        static_files = set()
+        if static_endpoints:
+            for ep in static_endpoints:
+                # If the IP is present anywhere in the static URL/IP string
+                if ip in str(ep.get("url", "")):
+                    static_files.add(ep.get("file"))
+        
+        ip_data["static_files"] = sorted(list(static_files))
 
     # C2 beaconing detection
     beaconing_alerts = _detect_beaconing(ip_timestamps)
