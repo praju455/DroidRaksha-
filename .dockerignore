@@ -46,3 +46,4 @@ frontend/tsconfig.tsbuildinfo
 celerybeat-schedule
 celery.log
 backend.log
+*.log

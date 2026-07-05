@@ -26,6 +26,59 @@ PRIVATE_RANGES = ["10.", "192.168.", "172.16.", "172.17.", "172.18.",
                   "172.19.", "172.2", "127.", "0.0.0.0"]
 
 
+import os
+import shutil
+import tempfile
+import subprocess
+import hashlib
+
+def _build_source_map(apk_path: str) -> str | None:
+    """Decompile APK using jadx to build a source map for evidence linking."""
+    jadx_bin = os.environ.get("JADX_BIN", "jadx")
+    if not shutil.which(jadx_bin):
+        logger.warning("jadx not found, skipping source map building")
+        return None
+    
+    # Create a unique temp dir
+    h = hashlib.md5(apk_path.encode()).hexdigest()
+    out_dir = os.path.join(tempfile.gettempdir(), f"jadx_src_{h}")
+    
+    if not os.path.exists(out_dir):
+        logger.info(f"Decompiling APK to {out_dir} for evidence linking...")
+        try:
+            env = os.environ.copy()
+            env["JAVA_OPTS"] = "-Xmx1G"
+            subprocess.run([
+                jadx_bin, "-d", out_dir, "-j", "1", "--no-res", "--no-imports", "--no-debug-info", apk_path
+            ], capture_output=True, timeout=60, env=env)
+        except Exception as e:
+            logger.error(f"JADX decompilation failed: {e}")
+            return None
+    return out_dir
+
+def _find_evidence(value: str, source_dir: str) -> dict | None:
+    """Find exact file and line number for a string in decompiled source."""
+    if not source_dir or not value:
+        return None
+    try:
+        cmd = ["grep", "-rnF", "-m", "1", value, source_dir]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+        if result.stdout:
+            line = result.stdout.splitlines()[0]
+            parts = line.split(":", 2)
+            if len(parts) >= 3:
+                filepath = parts[0].replace(source_dir + "/", "")
+                lineno = parts[1]
+                context = parts[2].strip()
+                return {
+                    "file": filepath,
+                    "line": int(lineno),
+                    "context": context
+                }
+    except Exception:
+        pass
+    return None
+
 def analyze(apk_path: str) -> dict:
     """Extract suspicious strings from DEX bytecode."""
     result = {
@@ -44,7 +97,8 @@ def analyze(apk_path: str) -> dict:
             for s in dex.get_strings():
                 all_strings.add(str(s))
 
-        result = _process_strings(all_strings)
+        source_dir = _build_source_map(apk_path)
+        result = _process_strings(all_strings, source_dir)
 
     except ImportError:
         logger.warning("androguard not installed — using mock string data")
@@ -55,37 +109,36 @@ def analyze(apk_path: str) -> dict:
 
     return result
 
-
-def _process_strings(strings: set[str]) -> dict:
-    ips, urls, suspicious = [], [], []
+def _process_strings(strings: set[str], source_dir: str = None) -> dict:
+    ips, urls, suspicious, resolved_urls = [], [], [], []
 
     for s in strings:
         # IPs
         for ip in RE_IPV4.findall(s):
             if not any(ip.startswith(r) for r in PRIVATE_RANGES):
-                ips.append({"type": "ip", "value": ip, "risk": "high"})
+                ips.append({"type": "ip", "value": ip, "risk": "high", "evidence": _find_evidence(ip, source_dir)})
 
         # URLs
         for url in RE_URL.findall(s):
             risk = "high" if any(d in url for d in SUSPICIOUS_DOMAINS) else "medium"
-            urls.append({"type": "url", "value": url[:200], "risk": risk})
+            urls.append({"type": "url", "value": url[:200], "risk": risk, "evidence": _find_evidence(url, source_dir)})
 
         # Aadhaar
         if RE_AADHAAR.search(s):
-            suspicious.append({"type": "aadhaar_pattern", "value": s[:80], "risk": "high"})
+            suspicious.append({"type": "aadhaar_pattern", "value": s[:80], "risk": "high", "evidence": _find_evidence(s, source_dir)})
 
         # PAN
         if RE_PAN.search(s):
-            suspicious.append({"type": "pan_pattern", "value": s[:80], "risk": "high"})
+            suspicious.append({"type": "pan_pattern", "value": s[:80], "risk": "high", "evidence": _find_evidence(s, source_dir)})
 
         # API Keys
         m = RE_API_KEY.search(s)
         if m:
-            suspicious.append({"type": "api_key", "value": s[:120], "risk": "high"})
+            suspicious.append({"type": "api_key", "value": s[:120], "risk": "high", "evidence": _find_evidence(s, source_dir)})
 
         # Crypto addresses
         if RE_CRYPTO.search(s):
-            suspicious.append({"type": "crypto_address", "value": s[:80], "risk": "medium"})
+            suspicious.append({"type": "crypto_address", "value": s[:80], "risk": "medium", "evidence": _find_evidence(s, source_dir)})
 
         # Base64 blobs (potential payload)
         for b64 in RE_BASE64.findall(s):
@@ -96,6 +149,7 @@ def _process_strings(strings: set[str]) -> dict:
                         "type": "base64_payload",
                         "value": f"{b64[:40]}… → {decoded[:60]}",
                         "risk": "medium",
+                        "evidence": _find_evidence(b64, source_dir)
                     })
                     # If decoded looks like a URL, capture it separately
                     if decoded.lower().startswith("http://") or decoded.lower().startswith("https://"):
@@ -104,6 +158,7 @@ def _process_strings(strings: set[str]) -> dict:
                             "original": b64,
                             "decoded": decoded,
                             "risk": "medium",
+                            "evidence": _find_evidence(decoded, source_dir)
                         })
             except Exception:
                 pass
@@ -124,16 +179,15 @@ def _process_strings(strings: set[str]) -> dict:
         "error": None,
     }
 
-
 def _mock_strings() -> dict:
     return {
         "ips": [
-            {"type": "ip", "value": "45.33.32.156", "risk": "high"},
+            {"type": "ip", "value": "45.33.32.156", "risk": "high", "evidence": {"file": "C2Client.java", "line": 142, "context": "String server = \"45.33.32.156\";"}},
             {"type": "ip", "value": "185.220.101.47", "risk": "high"},
             {"type": "ip", "value": "91.108.56.155", "risk": "high"},
         ],
         "urls": [
-            {"type": "url", "value": "http://c2-panel.ngrok.io/api/upload", "risk": "high"},
+            {"type": "url", "value": "http://c2-panel.ngrok.io/api/upload", "risk": "high", "evidence": {"file": "sources/com/malware/Exfiltrator.java", "line": 67, "context": "private static final String API_URL = \"http://c2-panel.ngrok.io/api/upload\";"}},
             {"type": "url", "value": "https://api.telegram.org/bot123456:TOKEN/sendMessage", "risk": "high"},
             {"type": "url", "value": "http://upi-support-helpline.com/verify", "risk": "high"},
             {"type": "url", "value": "https://npci-help.duckdns.org/otp", "risk": "high"},

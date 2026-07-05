@@ -1,5 +1,7 @@
 import type { Strings } from "@/lib/types";
-import { Link2, Globe, Code2 } from "lucide-react";
+import { Link2, Globe, Code2, Search } from "lucide-react";
+import { useState } from "react";
+import EvidenceViewer, { Evidence } from "./EvidenceViewer";
 
 interface Props { strings: Strings }
 
@@ -36,8 +38,8 @@ export default function StringsTable({ strings }: Props) {
 
       {allUrls.length > 0 && (
         <Section title="URLs" icon={<Link2 className="w-3.5 h-3.5 text-indigo-400" />}>
-          {allUrls.slice(0, 15).map((u, i) => (
-            <Row key={i} value={u.value} risk={u.risk} />
+          {allUrls.slice(0, 15).map((u: any, i) => (
+            <Row key={i} value={u.value} risk={u.risk} evidence={u.evidence} />
           ))}
           {allUrls.length > 15 && (
             <p className="text-xs text-slate-200 italic">+{allUrls.length - 15} more URLs…</p>
@@ -47,16 +49,16 @@ export default function StringsTable({ strings }: Props) {
 
       {allIps.length > 0 && (
         <Section title="IP Addresses" icon={<Globe className="w-3.5 h-3.5 text-cyan-400" />}>
-          {allIps.map((ip, i) => (
-            <Row key={i} value={ip.value} risk={ip.risk} />
+          {allIps.map((ip: any, i) => (
+            <Row key={i} value={ip.value} risk={ip.risk} evidence={ip.evidence} />
           ))}
         </Section>
       )}
 
       {susp.length > 0 && (
         <Section title="Suspicious Strings" icon={<Code2 className="w-3.5 h-3.5 text-rose-400" />}>
-          {susp.slice(0, 10).map((s, i) => (
-            <Row key={i} value={s.value} risk={s.risk ?? "high"} />
+          {susp.slice(0, 10).map((s: any, i) => (
+            <Row key={i} value={s.value} risk={s.risk ?? "high"} evidence={s.evidence} />
           ))}
         </Section>
       )}
@@ -83,13 +85,35 @@ function Section({
   );
 }
 
-function Row({ value, risk }: { value: string; risk?: string }) {
+function Row({ value, risk, evidence }: { value: string; risk?: string; evidence?: Evidence }) {
+  const [showEvidence, setShowEvidence] = useState(false);
   const color = RISK_COLORS[(risk as keyof typeof RISK_COLORS) ?? "low"] ?? "text-slate-200";
+  
   return (
-    <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-white/[0.02] transition-colors">
-      <span className={`font-mono text-xs break-all ${color}`}>{value}</span>
-      {risk === "high" && (
-        <span className="ml-auto shrink-0 text-xs px-1.5 rounded bg-rose-500/10 text-rose-400">High</span>
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 rounded px-2 py-1 hover:bg-white/[0.02] transition-colors">
+        <span className={`font-mono text-xs break-all ${color}`}>{value}</span>
+        
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          {evidence && (
+            <button
+              onClick={() => setShowEvidence(!showEvidence)}
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-slate-700 bg-slate-800 text-xs text-slate-300 hover:bg-slate-700 transition-colors"
+            >
+              <Search className="w-3 h-3" />
+              Evidence
+            </button>
+          )}
+          {risk === "high" && (
+            <span className="text-xs px-1.5 rounded bg-rose-500/10 text-rose-400">High</span>
+          )}
+        </div>
+      </div>
+      
+      {showEvidence && evidence && (
+        <div className="px-2 pb-2">
+          <EvidenceViewer evidence={evidence} risk={risk} />
+        </div>
       )}
     </div>
   );

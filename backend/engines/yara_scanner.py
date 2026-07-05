@@ -59,6 +59,8 @@ def analyze(apk_path: str) -> dict:
                         for m in matches:
                             hit = _format_match(m)
                             hit["file"] = entry
+                            if hit.get("evidence"):
+                                hit["evidence"]["file"] = entry
                             hits.append(hit)
         except Exception as e:
             logger.warning(f"YARA internal scan failed: {e}")
@@ -87,12 +89,25 @@ def analyze(apk_path: str) -> dict:
 
 def _format_match(m) -> dict:
     meta = m.meta or {}
+    evidence = None
+    if getattr(m, "strings", None) and len(m.strings) > 0:
+        first_match = m.strings[0]
+        offset = first_match[0]
+        str_data = first_match[2]
+        if isinstance(str_data, bytes):
+            str_data = str_data.decode("utf-8", errors="replace")
+        evidence = {
+            "offset": f"0x{offset:X} (byte {offset})",
+            "matched": str_data,
+            "file": "APK"
+        }
     return {
         "rule": m.rule,
         "severity": meta.get("severity", "MEDIUM"),
         "description": meta.get("description", m.rule),
         "tags": list(m.tags or []),
         "file": "APK",
+        "evidence": evidence,
     }
 
 
