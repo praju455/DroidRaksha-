@@ -152,30 +152,22 @@ function FlowRow({ flow, isNew, confirmed }: { flow: InterceptFlow; isNew: boole
 
 // ── Countdown Timer ───────────────────────────────────────────────────────
 
-function CountdownRing({ remaining, total }: { remaining: number; total: number }) {
+function CountdownTimer({ remaining, total }: { remaining: number; total: number }) {
   const elapsed = total - remaining;
   const pct = (elapsed / total) * 100;
-  const r = 36;
-  const circ = 2 * Math.PI * r;
-  const stroke = circ * (pct / 100);
   // Color transitions from green to red as it fills up
   const color = pct < 50 ? "#00ed3f" : pct < 75 ? "#fbbf24" : "#f43f5e";
   return (
-    <div className="relative flex items-center justify-center w-24 h-24">
-      <svg className="absolute" width="96" height="96" viewBox="0 0 96 96">
-        <circle cx="48" cy="48" r={r} stroke="#111" strokeWidth="6" fill="none" />
-        <circle
-          cx="48" cy="48" r={r}
-          stroke={color}
-          strokeWidth="6" fill="none"
-          strokeDasharray={`${stroke} ${circ}`}
-          strokeLinecap="round"
-          style={{ transform: "rotate(-90deg)", transformOrigin: "48px 48px", transition: "stroke-dasharray 1s linear" }}
+    <div className="flex flex-col gap-1.5 w-48 mr-4">
+      <div className="flex justify-between items-center text-[0.65rem] font-mono uppercase font-bold">
+        <span className="text-muted tracking-wider">Timer</span>
+        <span style={{ color }}>{Math.floor(elapsed)} / {total} sec</span>
+      </div>
+      <div className="w-full h-1.5 bg-[rgba(255,255,255,0.05)] rounded-full overflow-hidden">
+        <div 
+          className="h-full transition-all duration-1000 ease-linear"
+          style={{ width: `${pct}%`, backgroundColor: color }}
         />
-      </svg>
-      <div className="text-center z-10">
-        <p className="text-lg font-black font-mono" style={{ color }}>{Math.floor(elapsed)}</p>
-        <p className="text-[0.5rem] font-mono text-muted uppercase">sec</p>
       </div>
     </div>
   );
@@ -507,7 +499,7 @@ export default function LiveInterceptPanel({ analysisId, staticIps = [] }: Props
 
         <div className="flex items-center gap-3">
           {status === "running" && (
-            <CountdownRing
+            <CountdownTimer
               remaining={session?.remaining_sec ?? 0}
               total={session?.duration_sec ?? 60}
             />
