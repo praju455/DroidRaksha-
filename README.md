@@ -1,32 +1,43 @@
-# DroidRaksha 🛡️
+<div align="center">
+  <img src="frontend/public/logo.png" alt="DroidRaksha Logo" width="200" />
+  <h1>DroidRaksha 🛡️</h1>
+</div>
 
 **India's AI-Powered APK Threat Intelligence Platform**
 
-DroidRaksha is an advanced, high-performance static analysis platform designed to detect Android malware, specifically tailored for the Indian cybersecurity landscape. It identifies banking trojans, UPI fraud apps, loan scams, and other mobile threats through a multi-engine analysis pipeline, leveraging YARA rules, heuristics, and AI-driven narrative generation.
+DroidRaksha is an advanced, high-performance static and dynamic analysis platform designed to detect Android malware, specifically tailored for the Indian cybersecurity landscape. It identifies banking trojans, UPI fraud apps, loan scams, and other mobile threats through a multi-engine analysis pipeline, leveraging YARA rules, heuristics, Live Android Emulator Interception, and AI-driven narrative generation.
 
-🎥 **YouTube Demo:** [DroidRaksha – An AI Powered APK Threat Intelligence Platform by PHAPGUYZ](https://www.youtube.com/watch?v=your-video-id)
+## Quick Start (Running Locally)
 
-## 🚀 Quick Start (Running Locally with Docker)
+DroidRaksha requires a local Android emulator for advanced Live Intercept dynamic analysis.
 
-DroidRaksha is completely containerized. You do not need to install Python, Node.js, or any external databases on your machine to test the application.
+### 1. Prerequisites
+- **Docker Desktop**: Installed and running.
+- **Genymotion / VirtualBox**: Install Genymotion and VirtualBox. Set up a virtual device and ensure the Genymotion emulator is running before starting an analysis.
+- **ADB (Android Debug Bridge)**: Must be installed and accessible in your system's PATH.
 
-1. **Install Docker:** Ensure you have [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running.
-2. **Clone the repository:**
-   ```bash
-   git clone https://github.com/praju455/DroidRaksha-.git
-   cd DroidRaksha-
-   ```
-3. **Start the application:**
-   ```bash
-   docker compose up --build -d
-   ```
-4. **Access the Dashboard:** Open your web browser and navigate to `http://localhost:3000`.
+### 2. Start the Application
+Clone the repository and start the Docker environment. This single command will automatically build and spin up the complete microservices architecture, including the Next.js Frontend, FastAPI Backend, Redis Message Queue, and Celery Analysis Workers.
+```bash
+git clone https://github.com/praju455/DroidRaksha-.git
+cd DroidRaksha-
+docker compose up --build -d
+```
+Once the containers are running, access the Web Dashboard at `http://localhost:3000`.
 
-*Note: The first build might take a few minutes as it downloads the machine learning models and configures the MobSF sandbox environment.*
+### 3. Automated Emulator Intercept
+DroidRaksha now features an automated endpoint that connects to your running Genymotion emulator via ADB. It automatically installs the target APK, configures proxy settings to route traffic through `mitmproxy`, and monitors live network connections (C2 communications) during the analysis session.
 
-## 🏗️ Architecture
+If the automated proxy configuration fails or needs to be set manually for `mitmproxy`, run the following ADB command:
+```powershell
+& "C:\Android\platform-tools\adb.exe" shell settings put global http_proxy 10.0.3.2:8080
+```
 
-DroidRaksha (Round 2) employs a scalable, microservices-based architecture designed for distributed threat analysis:
+*Note: The first build might take a few minutes as it downloads the machine learning models and configures the environment.*
+
+## Architecture
+
+DroidRaksha employs a scalable, microservices-based architecture designed for distributed threat analysis:
 
 ```mermaid
 graph TD
@@ -47,33 +58,49 @@ graph TD
         RedisQueue --> Celery
     end
 
-    subgraph Static ["Static Analysis"]
+    subgraph Static ["1. Static Analysis Layer"]
         Androguard[Androguard & APKTool]
+        Manifest[Manifest Parser]
+        Strings[String Extractor]
         YARA[YARA Engine 50+ Rules]
+        Cert[Certificate Analyzer]
         Obfuscation[Obfuscation & Heuristics]
+        Mitre[MITRE ATT&CK Mapper]
         Celery --> Androguard
+        Celery --> Manifest
+        Celery --> Strings
         Celery --> YARA
+        Celery --> Cert
         Celery --> Obfuscation
+        Celery --> Mitre
     end
 
-    subgraph Dynamic ["Dynamic Sandbox"]
-        MobSF[MobSF + Docker]
+    subgraph StaticML ["2. Static ML Layer"]
+        XGBoost[XGBoost Classifier]
+        SHAP[SHAP Explainability]
+        MalBERT[MalBERT Zero-shot]
+        IsolationForest[Isolation Forest]
+        LangChain[LangChain Agent]
+        ExtIntel[VT / AbuseIPDB / India IOC]
+        Celery --> XGBoost
+        XGBoost --> SHAP
+        Celery --> MalBERT
+        Celery --> IsolationForest
+        Celery --> LangChain
+        Celery --> ExtIntel
+    end
+
+    subgraph Dynamic ["3. Dynamic Analysis Layer"]
+        Emulator[Android Emulator - ADB]
         Frida[Frida Runtime Hooks]
-        Network[PCAP & mitmproxy]
-        Celery --> MobSF
-        MobSF --> Frida
-        MobSF --> Network
-    end
-
-    subgraph ThreatIntel ["C2 & Threat Intel"]
-        IndiaIOC[India IOC DB]
-        Behavior[DGA / JA3 / Beacon]
-        ExtAPI[VT / AbuseIPDB / OTX]
-        Claude[Claude AI + ML Classifier]
-        Celery --> IndiaIOC
-        Celery --> Behavior
-        Celery --> ExtAPI
-        Celery --> Claude
+        Mitmproxy[mitmproxy / PCAP Analyzer]
+        Behavior[Network Behavior - DGA/JA3]
+        Evidence[Forensic Evidence Linker]
+        FastAPI -->|Automated ADB Install & Proxy| Emulator
+        Emulator --> Frida
+        Emulator --> Mitmproxy
+        Mitmproxy --> Behavior
+        Behavior --> Evidence
     end
 
     subgraph DataLayer ["Data Layer"]
@@ -91,186 +118,97 @@ graph TD
     classDef client fill:#1e40af,stroke:#fff,stroke-width:2px,color:#fff;
     classDef orchestration fill:#047857,stroke:#fff,stroke-width:2px,color:#fff;
     classDef static fill:#b45309,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef staticml fill:#6d28d9,stroke:#fff,stroke-width:2px,color:#fff;
     classDef dynamic fill:#dc2626,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef intel fill:#6d28d9,stroke:#fff,stroke-width:2px,color:#fff;
     classDef data fill:#334155,stroke:#fff,stroke-width:2px,color:#fff;
 
     class UI,Mobile,Nginx client;
     class FastAPI,RedisQueue,Celery orchestration;
-    class Androguard,YARA,Obfuscation static;
-    class MobSF,Frida,Network dynamic;
-    class IndiaIOC,Behavior,ExtAPI,Claude intel;
+    class Androguard,Manifest,Strings,YARA,Cert,Obfuscation,Mitre static;
+    class XGBoost,SHAP,MalBERT,IsolationForest,LangChain,ExtIntel staticml;
+    class Emulator,Frida,Mitmproxy,Behavior,Evidence dynamic;
     class RDS,Mongo,Elastic,S3 data;
 ```
 
-### 🔍 Detailed Architecture Explanation
+### Detailed Architecture Explanation
 
-The architecture is divided into six primary subsystems working together to analyze and classify Android APKs:
+The architecture is divided into the Gateway, Orchestration, Data Layer, and the core **18-Stage Analysis Engine**, which is strictly classified into three primary intelligence layers:
 
-#### 1. Clients & Gateway
-*   **Next.js 14 Web Dashboard & React Native Android App:** Serve as the user interfaces for analysts and end-users to submit APKs and view results.
-*   **Nginx Reverse Proxy & Load Balancer:** The secure entry point that handles incoming HTTPS/WSS traffic, providing SSL termination and routing requests to the backend.
+#### 1. Static Analysis Layer
+Extracts static features and signatures without executing the application.
+*   **Androguard & APKTool:** Reverse engineering, decompiling the APK, and extracting bytecode.
+*   **Manifest Parser:** Extracts permissions, dangerous combinations, services, and receivers.
+*   **String Extractor:** Pulls hardcoded IPs, URLs, base64 payloads, and crypto keys.
+*   **YARA Engine:** Scans extracted files against 50+ comprehensive rulesets for malicious signatures.
+*   **Certificate Analyzer:** Checks publisher details, trust verdict, and generates a certificate risk score.
+*   **Obfuscation & Heuristics:** Identifies packed code, hidden payloads, and suspicious static traits.
+*   **MITRE ATT&CK Mapper:** Maps extracted static features directly to MITRE tactics and techniques.
 
-#### 2. Backend & Orchestration
-*   **FastAPI Gateway:** The core asynchronous API that processes REST requests and manages real-time WebSocket connections.
-*   **Redis Cache & Queue:** Acts as a high-speed message broker for job queuing and caches state for fast lookups.
-*   **Celery Workers:** Distributed worker nodes that pull jobs from Redis and asynchronously execute resource-intensive static and dynamic analysis tasks.
+#### 2. Static ML Layer (AI & Intelligence)
+Leverages advanced machine learning and AI to classify threats based on static features.
+*   **XGBoost Classifier:** Trained on the CICMalDroid 2020 dataset for 5-class malware detection.
+*   **SHAP Explainability:** Interpretable AI output showing exact feature impact on the XGBoost score.
+*   **MalBERT:** HuggingFace BART zero-shot text classification applied on manifest and rules.
+*   **Isolation Forest:** Zero-day anomaly detection engine for novel, unseen mobile threats.
+*   **LangChain ReAct Agent (Gemini Flash):** Autonomous agent synthesizing evidence into court-admissible verdicts.
+*   **External Threat Intel (VT / AbuseIPDB / OTX):** Enriches static indicators using external API sources.
+*   **India IOC DB:** A curated database of Indicators of Compromise targeting the Indian landscape.
 
-#### 3. Static Analysis
-*   **Androguard & APKTool:** Tools for reverse engineering, decompiling the APK, and extracting manifest data and bytecode.
-*   **YARA Engine (50+ Rules):** Scans the extracted files against a comprehensive ruleset to detect known malicious signatures.
-*   **Obfuscation & Heuristics:** Specialized modules that identify packed code, hidden payloads, and suspicious static traits.
+#### 3. Dynamic Analysis Layer
+Executes the APK in a secure environment to capture live runtime and network behavior.
+*   **Android Emulator Automation:** The backend automatically connects via ADB, installs the APK, and configures proxies on-the-fly.
+*   **Frida Runtime Hooks:** Hooks into the running application to trace API calls, file I/O, and cryptographic operations.
+*   **mitmproxy:** Intercepts live SSL/HTTP traffic and captures full network flows.
+*   **PCAP Analyzer (tcpdump):** Extracts and analyzes DNS requests, HTTP flows, and TLS-SNI information.
+*   **Network Behavior Analyzer:** Identifies Domain Generation Algorithms (DGA), malicious TLS fingerprints (JA3), and C2 beaconing.
+*   **Forensic Evidence Linker:** Automatically correlates static hardcoded IPs with live dynamic C2 IPs to provide definitive proof.
 
-#### 4. Dynamic Sandbox
-*   **MobSF + Docker:** A secure, containerized environment where the APK is executed safely to monitor its behavior.
-*   **Frida Runtime Hooks:** Used to hook into the running application to trace API calls, file I/O, and cryptographic operations.
-*   **PCAP & mitmproxy:** Captures and analyzes network traffic to identify suspicious communications.
+## Tech Stack & Features
 
-#### 5. C2 & Threat Intel
-*   **India IOC DB:** A curated database of Indicators of Compromise (IOCs) specifically targeting the Indian landscape (e.g., fake UPI apps).
-*   **DGA / JA3 / Beaconing Detection:** Advanced network analysis to identify Domain Generation Algorithms, malicious TLS fingerprints (JA3), and C2 beaconing.
-*   **External APIs (VT / AbuseIPDB / OTX):** Integrations with VirusTotal, AbuseIPDB, and AlienVault OTX to enrich threat data.
-*   **Claude AI + ML Classifier:** AI-driven threat narrative generation and custom machine learning models to classify the malware family.
+### Core Analysis & Sandbox Engines
+- **Static Analysis:** Androguard, APKTool, and an extensive YARA engine.
+- **Dynamic Analysis:** Live Genymotion Emulator integration via ADB, `mitmproxy` for intercepting SSL/HTTP traffic, and PCAP extraction.
+- **Forensic-Grade Evidence Linking:** Automatically correlates static indicators (e.g., hardcoded IPs in code) with live network activity to provide definitive proof of malicious behavior.
 
-#### 6. Data Layer
-*   **AWS RDS (PostgreSQL):** Stores relational data like user details, scan metadata, and structured metrics.
-*   **MongoDB Atlas:** Stores large, unstructured JSON outputs from the analysis engines.
-*   **Elasticsearch:** Enables rapid search capabilities across IOCs and assists in clustering related threat campaigns.
-*   **AWS S3 Storage:** Secure object storage for heavy artifacts including uploaded APKs, captured PCAPs, and generated PDF reports.
+### Threat Intelligence & AI
+- **Ensemble Risk Scoring:** Calculates a weighted risk score by combining Static Rules, Sandbox analysis, Deep Neural Nets, Static ML, and Heuristic Engines.
+- **Machine Learning Models:**
+  - **XGBoost Classifier:** Trained on the CICMalDroid dataset.
+  - **MalBERT:** Zero-shot text classification on manifest and rules.
+- **Autonomous AI Agent:** LangChain ReAct agent synthesizing evidence into readable verdicts.
 
-## 📁 Folder Structure
+## Folder Structure
 
 ```text
 DroidRaksha/
 ├── backend/
-│   ├── ai/
-│   │   ├── narrative.py          ← Gemini-powered threat narrative
-│   │   ├── classifier.py         ← Rule-based malware family classifier
-│   │   ├── mitre_full.py         ← MITRE ATT&CK 40+ technique mapper
-│   │   ├── xgboost_classifier.py ← XGBoost + SHAP (MalDroid 2020)
-│   │   ├── anomaly_detector.py   ← Isolation Forest zero-day detection
-│   │   ├── malbert_classifier.py ← HuggingFace BART zero-shot
-│   │   └── langchain_agent.py    ← LangChain ReAct Agent (Gemini Flash)
-│   ├── db/
-│   │   └── database.py           ← SQLite + AnalysisRecord + PCAPRecord
-│   ├── engines/
-│   │   ├── cert_analyzer.py
-│   │   ├── manifest_parser.py
-│   │   ├── obfuscation.py
-│   │   ├── pcap_analyzer.py      ← PCAP: DNS, HTTP, TLS-SNI, beaconing, DGA
-│   │   ├── static_analyzer.py
-│   │   ├── string_extractor.py
-│   │   └── yara_scanner.py
-│   ├── intel/
-│   │   ├── abuseipdb.py
-│   │   ├── india_ioc.py
-│   │   └── virustotal.py
-│   ├── models/
-│   │   └── schemas.py
-│   ├── routes/
-│   │   ├── analysis.py
-│   │   ├── report.py
-│   │   ├── stats.py
-│   │   └── upload.py             ← POST /upload + POST /upload/pcap
-│   ├── scoring/
-│   │   └── risk_scorer.py
-│   └── worker/
-│       ├── celery_app.py
-│       └── tasks.py              ← 15-stage async analysis pipeline
+│   ├── ai/               ← Machine Learning and LLM Agents (XGBoost, MalBERT, LangChain)
+│   ├── db/               ← Database configurations
+│   ├── engines/          ← Static and Dynamic analysis engines (YARA, PCAP, etc.)
+│   ├── intel/            ← External Threat Intel Integrations (VT, AbuseIPDB, India IOC)
+│   ├── routes/           ← FastAPI endpoints (Upload, Report, WebSocket, Emulator Integration)
+│   ├── scoring/          ← Ensemble Risk Scorer
+│   └── worker/           ← Celery tasks for distributed processing
 ├── frontend/
-│   ├── app/
-│   │   ├── dashboard/page.tsx    ← Analytics dashboard (KPIs, charts, threat feed)
-│   │   ├── results/[id]/page.tsx ← 5-tab results page
-│   │   ├── globals.css
-│   │   ├── layout.tsx
-│   │   └── page.tsx              ← Landing + APK upload
-│   ├── components/
-│   │   ├── AIExplanation.tsx
-│   │   ├── AnalysisLoader.tsx
-│   │   ├── CertificateCard.tsx
-│   │   ├── DropZone.tsx
-│   │   ├── MalwareFamilyBadge.tsx← ML ensemble badge + SHAP chart
-│   │   ├── MitreTable.tsx
-│   │   ├── NetworkTrafficPanel.tsx← PCAP analysis panel + upload zone
-│   │   ├── PermissionTable.tsx
-│   │   ├── RiskScoreCard.tsx
-│   │   └── StringsTable.tsx
-│   ├── lib/
-│   │   ├── api.ts
-│   │   ├── types.ts
-│   │   └── utils.ts
-│   ├── package.json
-│   └── tsconfig.json
-├── models/
-│   ├── xgboost_maldroid.pkl  ← Trained XGBoost model
-│   ├── isolation_forest.pkl  ← Trained Isolation Forest
-│   └── feature_columns.json  ← Feature name mapping
-├── rules/
-│   ├── india_patterns.yar
-│   └── malware.yar
-├── scripts/
-│   └── train_xgboost_maldroid.py ← One-time training script (Colab-ready)
-├── uploads/                  ← APK + PCAP storage (gitignored)
-├── README.md
-└── requirements.txt
+│   ├── app/              ← Next.js App Router (Dashboard, Results page)
+│   ├── components/       ← React Components (RiskScoreCard, LiveInterceptPanel, etc.)
+│   └── lib/              ← API utilities and Types
+├── models/               ← Pre-trained ML models and scalers
+├── rules/                ← Custom YARA rulesets
+└── scripts/              ← Training and utility scripts
 ```
 
-## 🛠️ Tech Stack & Technical Decisions (Round 2)
+## Screenshots
 
-DroidRaksha is built using a modern, scalable, and distributed technology stack, designed to handle intensive static and dynamic analysis workloads securely.
+<div align="center">
+  <img src="assets/screenshot-1.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-2.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-3.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-4.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-5.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-6.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-7.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-8.png" width="45%" style="margin: 10px;" />
+  <img src="assets/screenshot-9.png" width="45%" style="margin: 10px;" />
+</div>
 
-### 💻 Client & Gateway
-- **Frontend:** Next.js 14 (App Router) + TypeScript, featuring a stark Cyber Terminal Aesthetic using custom Vanilla CSS (glass panels, monospace fonts, `.corner-brackets`). Includes interactive HTML5 Canvas 3D particle meshes for the landing page.
-- **Mobile App:** React Native application for Android users.
-- **Gateway & Real-time:** Nginx reverse proxy with WebSockets for true live analysis progress tracking.
-
-### ⚙️ Backend Orchestration
-- **API Framework:** FastAPI (Python) for fully asynchronous endpoint handling.
-- **Job Queue:** Celery with Redis as the message broker, offloading heavy static and dynamic analysis to distributed workers.
-- **Caching:** Redis for fast state lookups and WebSocket state management.
-
-### 🔍 Core Analysis & Sandbox Engines
-- **Static Analysis:** Androguard, APKTool, and an extensive YARA engine (50+ comprehensive rules).
-- **Dynamic Analysis:** Dockerized MobSF sandbox environment.
-- **Runtime Monitoring:** Frida for API/file I/O hooking and `tcpdump`/`mitmproxy` for full PCAP network analysis.
-
-### 🧠 Threat Intelligence & C2 Detection
-- **AI & ML Intelligence Layer:**
-  - **XGBoost Classifier:** Trained on the CICMalDroid 2020 dataset for 5-class malware detection. Integrates a preprocessing pipeline using `median_imputer.pkl` and `minmax_scaler.pkl` to scale and clean inputs prior to inference.
-  - **Isolation Forest:** For zero-day anomaly detection. Detects novel, unseen mobile threats that signature/YARA scanners might miss.
-  - **MalBERT:** Zero-shot text classification using `facebook/bart-large-mnli` on manifest and rules.
-  - **LangChain Agent:** Autonomous ReAct agent (powered by Gemini Flash) synthesizing evidence into court-admissible verdicts.
-  - **SHAP Explainability:** Interpretable AI output showing exact feature impact.
-- **External Intel:** Integration with VirusTotal (Hash/URL/IP), AbuseIPDB, and AlienVault OTX.
-- **Advanced C2 Detection:** Algorithms for detecting DGA (Domain Generation Algorithms) via Shannon entropy, TLS JA3 fingerprint matching, and timing variance analysis for live beacon detection.
-- **India IOC Engine:** A fully managed database with an admin API for updating known fake UPI apps, fraudulent loan domains, and malicious Indian IPs.
-
-### 🗄️ Distributed Data Layer
-- **Relational DB:** AWS RDS (PostgreSQL) for metadata and structured threat metrics.
-- **Document DB:** MongoDB Atlas for storing raw, unstructured JSON analysis results.
-- **Search Engine:** Elasticsearch for rapid IOC searching and threat campaign clustering.
-- **Storage:** AWS S3 for secure, scalable storage of raw APKs, PCAP dumps, and branded forensic PDF reports.
-
-### 🚀 Infrastructure & DevOps
-- **Deployment:** Docker Compose migrating to Kubernetes on AWS EC2.
-- **CI/CD & Monitoring:** Automated deployment via GitHub Actions with Sentry and Grafana for error tracking and metrics monitoring.
-- **Sharing:** Threat intelligence sharing via STIX 2.1 / TAXII exports and a rate-limited Bulk REST API.
-
-## 🗺️ Roadmap & Task Status (Round 2)
-
-### ✅ Completed & Substantially Progressed Phases
-*   **Phase 1: Fix Unfinished Round 1 Items**
-*   **Phase 2: APK File Tree + Manifest XML Viewer**
-*   **Phase 3: PCAP Upload + Network Traffic Analysis**
-*   **Phase 4: Celery + Redis + WebSocket Progress**
-*   **Phase 7: MobSF Dynamic Sandbox**
-*   **Phase 10: YARA Rules: 12 → 50+**
-*   **Phase 11: AI + ML Intelligence Layer**
-*   **Phase 12: Frontend — All New Components + Pages** (Mostly complete)
-
-### 🔴 Remaining Phases
-*   **Phase 5: Database + Storage Upgrade** (PostgreSQL, MongoDB, S3)
-*   **Phase 6: JADX Decompilation View** (Java source from DEX)
-*   **Phase 8: Advanced C2 + Threat Intelligence** (Beaconing, DGA, India IOC Admin API)
-*   **Phase 9: Static ↔ Dynamic Correlation Engine**
-*   **Phase 13: Legally Defensible Forensic PDF Report**

@@ -27,7 +27,6 @@ import DecompilerPanel from "@/components/DecompilerPanel";
 import ThreatCopilot from "@/components/ThreatCopilot";
 import C2IntelligencePanel from "@/components/C2IntelligencePanel";
 import LiveInterceptPanel from "@/components/LiveInterceptPanel";
-import ThreatMap from "@/components/ThreatMap";
 
 export default function ResultsPage() {
   const { id } = useParams() as { id: string };
@@ -224,7 +223,6 @@ export default function ResultsPage() {
                 <InfoItem label="File Size" value={`${(result.hashes.file_size / 1024 / 1024).toFixed(2)} MB`} />
               </div>
               <MitreTable tactics={result.mitre} />
-              {dangerousIps.length > 0 && <ThreatMap ips={dangerousIps} />}
               <PermissionTable permissions={result.manifest.permissions} dangerousCombos={result.manifest.dangerous_combos} />
               <StringsTable strings={result.strings} />
             </div>
