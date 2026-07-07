@@ -130,38 +130,75 @@ graph TD
     class RDS,Mongo,Elastic,S3 data;
 ```
 
-### Detailed Architecture Explanation
+### Detailed Architecture Explanation: The 18-Stage Analysis Engine
 
-The architecture is divided into the Gateway, Orchestration, Data Layer, and the core **18-Stage Analysis Engine**, which is strictly classified into three primary intelligence layers:
+The core architecture revolves around our **18-Stage Analysis Engine**, meticulously divided across three intelligence layers. Below is the complete breakdown of every engine, its purpose, and where it lives in the codebase.
 
-#### 1. Static Analysis Layer
-Extracts static features and signatures without executing the application.
-*   **Androguard & APKTool:** Reverse engineering, decompiling the APK, and extracting bytecode.
-*   **Manifest Parser:** Extracts permissions, dangerous combinations, services, and receivers.
-*   **String Extractor:** Pulls hardcoded IPs, URLs, base64 payloads, and crypto keys.
-*   **YARA Engine:** Scans extracted files against 50+ comprehensive rulesets for malicious signatures.
-*   **Certificate Analyzer:** Checks publisher details, trust verdict, and generates a certificate risk score.
-*   **Obfuscation & Heuristics:** Identifies packed code, hidden payloads, and suspicious static traits.
-*   **MITRE ATT&CK Mapper:** Maps extracted static features directly to MITRE tactics and techniques.
+#### 1. Static Analysis Layer (7 Engines)
+This layer extracts features, metadata, and malicious signatures directly from the APK binary without executing it.
 
-#### 2. Static ML Layer (AI & Intelligence)
-Leverages advanced machine learning and AI to classify threats based on static features.
-*   **XGBoost Classifier:** Trained on the CICMalDroid 2020 dataset for 5-class malware detection.
-*   **SHAP Explainability:** Interpretable AI output showing exact feature impact on the XGBoost score.
-*   **MalBERT:** HuggingFace BART zero-shot text classification applied on manifest and rules.
-*   **Isolation Forest:** Zero-day anomaly detection engine for novel, unseen mobile threats.
-*   **LangChain ReAct Agent (Gemini Flash):** Autonomous agent synthesizing evidence into court-admissible verdicts.
-*   **External Threat Intel (VT / AbuseIPDB / OTX):** Enriches static indicators using external API sources.
-*   **India IOC DB:** A curated database of Indicators of Compromise targeting the Indian landscape.
+*   **1. Androguard & APKTool Engine**
+    *   **Purpose:** The foundational reverse-engineering engine. It decompiles the APK, extracts the raw Dalvik bytecode (Smali), and parses the structural components.
+    *   **Location:** `backend/engines/static_analyzer.py` & `backend/engines/jadx_decompiler.py`
+*   **2. Manifest Parser**
+    *   **Purpose:** Analyzes the `AndroidManifest.xml` to extract requested permissions, exported services, and broadcast receivers. It flags inherently dangerous permission combinations (e.g., `READ_SMS` + `SEND_SMS`).
+    *   **Location:** `backend/engines/manifest_parser.py`
+*   **3. String Extractor**
+    *   **Purpose:** Scrapes the decompiled code for hardcoded artifacts. It uses regex to identify IPv4/IPv6 addresses, URLs, email addresses, base64 encoded payloads, and cryptographic keys.
+    *   **Location:** `backend/engines/string_extractor.py`
+*   **4. YARA Scanner Engine**
+    *   **Purpose:** A signature-matching engine that scans the extracted files against a database of 50+ comprehensive custom rulesets to detect known malware families and patterns.
+    *   **Location:** `backend/engines/yara_scanner.py` (Rules in `rules/`)
+*   **5. Certificate & Signature Analyzer**
+    *   **Purpose:** Inspects the app's signing certificate. It checks the issuer, validity period, and generates a certificate risk score to catch forged or untrusted developers.
+    *   **Location:** `backend/engines/cert_analyzer.py`
+*   **6. Obfuscation & Heuristics Engine**
+    *   **Purpose:** Detects defensive evasion techniques. It identifies packed code (e.g., UPX, DexGuard), hidden payloads, and suspicious static traits designed to bypass AV.
+    *   **Location:** `backend/engines/obfuscation.py`
+*   **7. MITRE ATT&CK Mapper**
+    *   **Purpose:** Translates all discovered static features and heuristics into standardized MITRE ATT&CK Mobile tactics and techniques for standardized reporting.
+    *   **Location:** `backend/ai/mitre_full.py`
 
-#### 3. Dynamic Analysis Layer
-Executes the APK in a secure environment to capture live runtime and network behavior.
-*   **Android Emulator Automation:** The backend automatically connects via ADB, installs the APK, and configures proxies on-the-fly.
-*   **Frida Runtime Hooks:** Hooks into the running application to trace API calls, file I/O, and cryptographic operations.
-*   **mitmproxy:** Intercepts live SSL/HTTP traffic and captures full network flows.
-*   **PCAP Analyzer (tcpdump):** Extracts and analyzes DNS requests, HTTP flows, and TLS-SNI information.
-*   **Network Behavior Analyzer:** Identifies Domain Generation Algorithms (DGA), malicious TLS fingerprints (JA3), and C2 beaconing.
-*   **Forensic Evidence Linker:** Automatically correlates static hardcoded IPs with live dynamic C2 IPs to provide definitive proof.
+#### 2. Static ML Layer (AI & Intelligence) (7 Engines)
+This layer leverages advanced machine learning, Natural Language Processing (NLP), and AI to classify threats based on the static features.
+
+*   **8. XGBoost Classifier**
+    *   **Purpose:** A high-performance gradient boosted tree model trained on the CICMalDroid 2020 dataset. It classifies the app into 5 distinct malware categories.
+    *   **Location:** `backend/ai/xgboost_classifier.py`
+*   **9. SHAP Explainability Engine**
+    *   **Purpose:** Provides transparency to the XGBoost model. It outputs exactly which features (e.g., specific permissions or API calls) contributed most to the risk score.
+    *   **Location:** Integrated within `backend/ai/xgboost_classifier.py`
+*   **10. MalBERT (Zero-shot NLP)**
+    *   **Purpose:** Utilizes a HuggingFace BART zero-shot text classification model. It reads the manifest and YARA rule descriptions like a human to infer malicious intent.
+    *   **Location:** `backend/ai/malbert_classifier.py`
+*   **11. Isolation Forest (Anomaly Detection)**
+    *   **Purpose:** An unsupervised learning engine designed to detect zero-day anomalies. It identifies apps that deviate significantly from known benign baselines.
+    *   **Location:** `backend/ai/anomaly_detector.py`
+*   **12. LangChain ReAct Agent (Gemini Flash)**
+    *   **Purpose:** An autonomous AI agent that ingests the raw outputs from all other engines and synthesizes a highly readable, court-admissible forensic narrative.
+    *   **Location:** `backend/ai/langchain_agent.py` & `backend/ai/narrative.py`
+*   **13. External Threat Intel Integrations**
+    *   **Purpose:** Enriches static indicators (IPs/Hashes) by querying external APIs (VirusTotal, AbuseIPDB, AlienVault OTX) for global threat reputation.
+    *   **Location:** `backend/intel/virustotal.py`, `backend/intel/abuseipdb.py`, `backend/intel/otx.py`
+*   **14. India IOC Database**
+    *   **Purpose:** A localized threat intelligence engine that checks indicators against a curated database of IOCs specifically targeting the Indian landscape.
+    *   **Location:** `backend/intel/india_ioc.py`
+
+#### 3. Dynamic Analysis Layer (Live Intercept) (4 Engines)
+Executes the APK in a secure sandbox to capture real-time runtime and network behavior.
+
+*   **15. Emulator Automation & Sandbox Engine**
+    *   **Purpose:** Orchestrates the dynamic analysis environment. Connects to the emulator via ADB, installs the APK, configures proxies on-the-fly, and launches the app.
+    *   **Location:** `backend/engines/sandbox_engine.py`
+*   **16. Frida Runtime Hooks**
+    *   **Purpose:** Injects into the running application process to dynamically trace sensitive API calls, file I/O operations, and cryptographic routines in real-time.
+    *   **Location:** `sandbox/frida_hooks/api_monitor.js`
+*   **17. mitmproxy & PCAP Analyzer**
+    *   **Purpose:** Intercepts live SSL/HTTP traffic and captures full network flows. It extracts DNS requests, HTTP payloads, and TLS-SNI information.
+    *   **Location:** `backend/engines/intercept_engine.py` & `backend/engines/pcap_analyzer.py`
+*   **18. Network Behavior & Correlation Engine**
+    *   **Purpose:** The final forensic evidence linker. It detects DGA domains, malicious TLS fingerprints (JA3), beaconing, and correlates static hardcoded IPs with live dynamic C2 IPs.
+    *   **Location:** `backend/engines/dga_detector.py`, `backend/engines/beacon_detector.py`, & `backend/engines/correlation_engine.py`
 
 ## Tech Stack & Features
 
