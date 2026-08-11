@@ -512,7 +512,7 @@ export default function LiveInterceptPanel({ analysisId, staticIps = [] }: Props
           )}
         </div>
 
-        <SetupGuide port={port} analysisId={analysisId} />
+        <SetupGuide port={port} />
       </div>
     );
   }
@@ -787,7 +787,7 @@ export default function LiveInterceptPanel({ analysisId, staticIps = [] }: Props
       </div>
 
       {/* Setup guide at bottom */}
-      <SetupGuide port={port} analysisId={analysisId} />
+      <SetupGuide port={port} />
     </div>
   );
 }

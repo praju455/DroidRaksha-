@@ -72,15 +72,6 @@ export default function ResultsPage() {
                     result.risk.risk_level === 'MEDIUM' ? '#fbbf24' : 
                     result.risk.risk_level === 'LOW' ? '#4ade80' : '#22d3ee';
 
-  // Identify dangerous dynamic IPs (intercepted IPs not found in static analysis)
-  let dangerousIps: string[] = [];
-  if (result.network?.remote_ips && result.strings?.ips) {
-    const staticIps = new Set(result.strings.ips.map(ip => ip.value));
-    dangerousIps = result.network.remote_ips
-      .map(f => f.ip)
-      .filter(ip => ip && !staticIps.has(ip));
-  }
-
   return (
     <div className="min-h-screen bg-background grid-bg p-6 md:p-12 relative">
       <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black pointer-events-none z-0"></div>
@@ -164,15 +155,7 @@ export default function ResultsPage() {
         {activeTab === "overview" && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-1 space-y-6">
-              <RiskScoreCard 
-                risk={result.risk} 
-                dynamic={result.dynamic}
-                mlClassification={result.ml_classification}
-                xgboost={result.xgboost}
-                malbert={result.malbert}
-                network={result.network}
-                strings={result.strings}
-              />
+              <RiskScoreCard risk={result.risk} />
               {result.ml_classification && (
                 <MalwareFamilyBadge
                   mlClassification={result.ml_classification}

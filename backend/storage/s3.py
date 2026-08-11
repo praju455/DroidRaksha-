@@ -13,11 +13,7 @@ S3_REGION_NAME = os.getenv("S3_REGION_NAME", "auto")
 session = aioboto3.Session()
 
 def is_s3_configured() -> bool:
-    if not all([S3_ENDPOINT_URL, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY]):
-        return False
-    if S3_ENDPOINT_URL and "<account_id>" in S3_ENDPOINT_URL:
-        return False
-    return True
+    return all([S3_ENDPOINT_URL, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY])
 
 def get_s3_client():
     return session.client(
