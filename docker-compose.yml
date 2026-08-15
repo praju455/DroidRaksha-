@@ -18,6 +18,11 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ── MobSF Static Analyzer ─────────────────────────────────────────────────
   mobsf:
@@ -28,6 +33,11 @@ services:
     environment:
       - MOBSF_API_KEY=${MOBSF_API_KEY:-droidraksha}
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/"]
       interval: 30s
@@ -42,6 +52,11 @@ services:
     ports:
       - "6379:6379"
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -57,6 +72,11 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -76,6 +96,7 @@ services:
       - ./uploads:/app/uploads
       - ./droidraksha.db:/app/droidraksha.db
       - /var/run/docker.sock:/var/run/docker.sock   # Allow sandbox to spawn containers
+      - huggingface_cache:/root/.cache/huggingface
     environment:
       - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///./droidraksha.db}
       - UPLOAD_DIR=./uploads
@@ -104,6 +125,11 @@ services:
       - mobsf
       - mongodb
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 
   # ── Celery Worker ─────────────────────────────────────────────────────────
@@ -117,6 +143,7 @@ services:
       - ./uploads:/app/uploads
       - ./droidraksha.db:/app/droidraksha.db
       - /var/run/docker.sock:/var/run/docker.sock
+      - huggingface_cache:/root/.cache/huggingface
     environment:
       - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///./droidraksha.db}
       - UPLOAD_DIR=./uploads
@@ -138,7 +165,13 @@ services:
       - mobsf
       - mongodb
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   mongo_data:
+  huggingface_cache:
 
