@@ -1,0 +1,78 @@
+{
+  "frameworks": {
+    "AndroRAT": {
+      "severity": "CRITICAL",
+      "description": "Open-source Android Remote Access Trojan. Full device control.",
+      "patterns": ["androrat", "rat\\.apk", "com\\.androrat", "myServer\\.start", "AudioCapture", "FileManager.*send", "getGPS.*interval"]
+    },
+    "AhMyth": {
+      "severity": "CRITICAL",
+      "description": "AhMyth RAT — camera, microphone, SMS, file exfiltration.",
+      "patterns": ["ahmyth", "AhMyth", "io\\.github\\.sangrobot", "socket\\.connect.*myip", "FileManager.*socket"]
+    },
+    "SpyNote": {
+      "severity": "CRITICAL",
+      "description": "SpyNote RAT — keylogger, screen capture, live streaming.",
+      "patterns": ["spynote", "SpyNote", "com\\.craxsrat", "CRAXSRAT", "KeyLog.*socket", "ScreenCapture.*stream"]
+    },
+    "DarkComet": {
+      "severity": "CRITICAL",
+      "description": "DarkComet RAT — widely used in targeted attacks.",
+      "patterns": ["DarkComet", "darkcomet", "DARK_COMET", "DC2\\.Ping", "SuspendSvc"]
+    },
+    "Metasploit": {
+      "severity": "CRITICAL",
+      "description": "Metasploit Meterpreter stager detected.",
+      "patterns": ["meterpreter", "Meterpreter", "metasploit", "stageless.*payload", "reverse_tcp", "reverse_https", "com/metasploit"]
+    },
+    "CobaltStrike": {
+      "severity": "CRITICAL",
+      "description": "Cobalt Strike beacon implant. Used by APT groups.",
+      "patterns": ["cobaltstrike", "CobaltStrike", "beacon\\.dll", "ReflectiveDll", "MalleableC2", "sleep.*jitter", "checksum8"]
+    },
+    "njRAT": {
+      "severity": "CRITICAL",
+      "description": "njRAT — common in Middle East / South Asia attacks.",
+      "patterns": ["njrat", "njRAT", "bladabindi", "LimeRAT", "nj-rat"]
+    },
+    "Cerberus": {
+      "severity": "CRITICAL",
+      "description": "Cerberus banking trojan / Alien successor. Targets Indian banking apps.",
+      "patterns": ["cerberus", "Cerberus", "alien\\.apk", "grabber.*clipboard", "injectView.*overlay", "AccessibilityService.*bank"]
+    },
+    "Anubis": {
+      "severity": "CRITICAL",
+      "description": "Anubis banking trojan. Active in India targeting UPI apps.",
+      "patterns": ["anubis", "Anubis", "anubisnetworks", "overlay.*paytm", "overlay.*phonepe", "overlay.*gpay"]
+    },
+    "GenericHTTPBeacon": {
+      "severity": "HIGH",
+      "description": "Generic HTTP C2 beacon pattern (periodic HTTP call near sleep()).",
+      "patterns": ["Thread\\.sleep.*\\d{4,}.*HttpURLConnection", "HttpURLConnection.*Thread\\.sleep.*\\d{4,}", "Timer.*HttpPost", "ScheduledExecutorService.*HttpClient"]
+    },
+    "DNSTunneling": {
+      "severity": "HIGH",
+      "description": "DNS tunneling C2 channel — data exfil over DNS TXT/MX queries.",
+      "patterns": ["DnsResolver.*TXT", "TYPE_TXT", "queryType.*txt", "base64.*dns", "dns.*exfil", "iodine", "dnscat"]
+    }
+  },
+  "tor_patterns": ["\\.onion", "orbot", "Orbot", "torproject", "SOCKS5.*127\\.0\\.0\\.1.*9050", "Socks5Proxy.*9150"],
+  "high_risk_asns": {
+    "AS9009": "M247 Europe (bulletproof hoster)",
+    "AS59253": "Leaseweb Asia (frequent C2 host)",
+    "AS62282": "FranTech Solutions (bulletproof)",
+    "AS174": "Cogent (frequent C2 upstream)",
+    "AS3223": "Voxility (DDoS botnet hosting)",
+    "AS8075": "Microsoft Azure (common attacker infra)",
+    "AS16509": "Amazon AWS (common attacker infra)",
+    "AS15169": "Google Cloud (common attacker infra)"
+  },
+  "high_risk_countries": {
+    "RU": {"name": "Russia", "score": 90},
+    "KP": {"name": "North Korea", "score": 95},
+    "CN": {"name": "China", "score": 70},
+    "IR": {"name": "Iran", "score": 85},
+    "NG": {"name": "Nigeria", "score": 60},
+    "RO": {"name": "Romania", "score": 50}
+  }
+}

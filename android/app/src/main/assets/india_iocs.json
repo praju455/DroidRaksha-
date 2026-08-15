@@ -1,0 +1,78 @@
+{
+  "fake_packages": [
+    "com.npci.bhim.fake",
+    "com.phonepe.app.fake",
+    "net.one97.paytm.clone",
+    "com.google.android.apps.nbu.files.fake",
+    "com.amazon.mShop.android.shopping.fake",
+    "in.amazon.mShop.android.shopping.scam",
+    "com.whatsapp.fake",
+    "com.sbi.lotusintouch.fake",
+    "com.axis.mobile.fake",
+    "com.icicibank.imobile.fake",
+    "com.hdfcbank.mobilebanking.fake",
+    "com.boi.mobile.fake",
+    "org.npci.upiapp.fake",
+    "com.fastcash.loan",
+    "com.instantloan.rupee",
+    "com.quickrupee.personal",
+    "com.cashguru.india",
+    "com.rupeefly.loan"
+  ],
+  "fraudulent_domains": [
+    "upi-support-helpline.com",
+    "npci-help.in",
+    "sbi-secure-login.com",
+    "hdfc-netbanking-secure.com",
+    "paytm-kyc-update.in",
+    "phonepe-fraud-check.com",
+    "income-tax-refund-india.com",
+    "aadhaar-update-online.in",
+    "pm-kisan-samman.in",
+    "covid-relief-fund-india.com",
+    "ration-card-apply-online.in",
+    "fastcashloan.in",
+    "easyrupee.xyz",
+    "instantloan24.in"
+  ],
+  "malicious_ips": [
+    "185.220.101.47",
+    "45.142.212.100",
+    "91.108.4.0",
+    "91.108.56.0",
+    "198.199.98.197",
+    "134.209.155.118",
+    "159.89.32.157"
+  ],
+  "loan_scam_keywords": [
+    "loan", "rupee", "cash", "instant", "quick"
+  ],
+  "upi_fraud_patterns": [
+    "upi.*helpline",
+    "npci.*support",
+    "kyc.*update.*bank",
+    "bank.*account.*blocked",
+    "aadhaar.*link.*account",
+    "income.?tax.*refund",
+    "pm.kisan",
+    "loan.*instant.*approve"
+  ],
+  "india_c2_domain_patterns": [
+    "rbi-verify\\.",
+    "paytm-secure\\.",
+    "upi-alert\\.",
+    "aadhaar-update\\.",
+    "sbi-kyc\\.",
+    "hdfc-otp\\.",
+    "icici-verify\\.",
+    "axis-bank-alert\\.",
+    "india-cert\\."
+  ],
+  "discom_fake_patterns": [
+    "bses.*kyc",
+    "tata.*power.*helpline",
+    "bescom.*update",
+    "electricity.*bill.*overdue",
+    "power.*cut.*notice"
+  ]
+}
